@@ -69,6 +69,8 @@ db.exec(`
 
 // Migrations for databases created by earlier versions.
 const itemCols = (db.prepare('PRAGMA table_info(items)').all() as { name: string }[]).map((c) => c.name);
+const projectCols = (db.prepare('PRAGMA table_info(projects)').all() as { name: string }[]).map((c) => c.name);
+if (!projectCols.includes('density')) db.exec('ALTER TABLE projects ADD COLUMN density REAL NOT NULL DEFAULT 1');
 if (!itemCols.includes('rotation')) db.exec('ALTER TABLE items ADD COLUMN rotation REAL NOT NULL DEFAULT 0');
 
 export function tx<T>(fn: () => T): T {

@@ -187,24 +187,42 @@ function avoidOverlap(rects: Rect[], existing: Rect[], zoom: number, gapPx = 20)
   return rects;
 }
 
+/**
+ * Infinite pattern. Two layers one octave apart are drawn at once; as you zoom,
+ * the finer layer fades in or out, so the spacing never visibly jumps.
+ */
 function backgroundStyle(project: Project, v: View): CSSProperties {
   const style: CSSProperties = { backgroundColor: project.bgColor };
   if (project.pattern === 'plain') return style;
   const dark = isDark(project.bgColor);
-  let step = (project.pattern === 'dots' ? 22 : 32) * v.zoom;
-  while (step < 14) step *= 2;
-  while (step > 120) step /= 2;
-  if (project.pattern === 'dots') {
-    const ink = dark ? 'rgba(255,255,255,0.17)' : 'rgba(0,0,0,0.17)';
-    const r = 1.1;
-    style.backgroundImage = `radial-gradient(circle at ${step / 2}px ${step / 2}px, ${ink} ${r}px, transparent ${r + 0.7}px)`;
-    style.backgroundPosition = `${v.x - step / 2}px ${v.y - step / 2}px`;
+  const dots = project.pattern === 'dots';
+  const density = project.density || 1;
+  // Zoom sets the phase within an octave; density scales on-screen spacing directly
+  // (scaling world spacing instead would be cancelled out by the octave blend).
+  const baseMin = dots ? 11 : 14;
+  const k = Math.log2(((dots ? 22 : 32) * v.zoom) / baseMin);
+  const frac = k - Math.floor(k); // 0 → fine layer about to vanish, 1 → fully grown
+  const fine = (baseMin / Math.pow(density, 0.8)) * Math.pow(2, frac);
+  const coarse = fine * 2;
+  const r0 = 1.1 * Math.min(1, Math.pow(density, -0.3)); // smaller dots when packed tighter
+  const t = frac * frac * (3 - 2 * frac); // smoothstep
+
+  const rgb = dark ? '255,255,255' : '0,0,0';
+  if (dots) {
+    const a = 0.17;
+    const dot = (step: number, alpha: number, r: number) =>
+      `radial-gradient(circle at ${step / 2}px ${step / 2}px, rgba(${rgb},${alpha}) ${r}px, transparent ${r + 0.7}px)`;
+    style.backgroundImage = `${dot(coarse, a, r0)}, ${dot(fine, a * t, r0 * (0.6 + 0.4 * t))}`;
+    style.backgroundSize = `${coarse}px ${coarse}px, ${fine}px ${fine}px`;
+    style.backgroundPosition = `${v.x - coarse / 2}px ${v.y - coarse / 2}px, ${v.x - fine / 2}px ${v.y - fine / 2}px`;
   } else {
-    const ink = dark ? 'rgba(255,255,255,0.065)' : 'rgba(0,0,0,0.06)';
-    style.backgroundImage = `linear-gradient(to right, ${ink} 1px, transparent 1px), linear-gradient(to bottom, ${ink} 1px, transparent 1px)`;
-    style.backgroundPosition = `${v.x}px ${v.y}px`;
+    const a = dark ? 0.07 : 0.065;
+    const lines = (alpha: number) =>
+      `linear-gradient(to right, rgba(${rgb},${alpha}) 1px, transparent 1px), linear-gradient(to bottom, rgba(${rgb},${alpha}) 1px, transparent 1px)`;
+    style.backgroundImage = `${lines(a)}, ${lines(a * t)}`;
+    style.backgroundSize = `${coarse}px ${coarse}px, ${coarse}px ${coarse}px, ${fine}px ${fine}px, ${fine}px ${fine}px`;
+    style.backgroundPosition = `${v.x}px ${v.y}px, ${v.x}px ${v.y}px, ${v.x}px ${v.y}px, ${v.x}px ${v.y}px`;
   }
-  style.backgroundSize = `${step}px ${step}px`;
   return style;
 }
 

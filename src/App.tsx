@@ -110,7 +110,7 @@ export function App() {
   }, []);
 
   const save = useCallback(
-    (id: string, patch: Partial<Pick<Project, 'name' | 'pattern' | 'bgColor'>>) => {
+    (id: string, patch: Partial<Pick<Project, 'name' | 'pattern' | 'bgColor' | 'density'>>) => {
       patchLocal(id, patch);
       api.updateProject(id, patch).catch((err) => toast(`Couldn’t save: ${err.message}`, 'error'));
     },

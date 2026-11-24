@@ -22,6 +22,7 @@ interface ProjectRow {
   position: number;
   pattern: string;
   bg_color: string;
+  density: number;
   view_x: number;
   view_y: number;
   zoom: number;
@@ -33,6 +34,7 @@ const projectJson = (p: ProjectRow) => ({
   position: p.position,
   pattern: p.pattern,
   bgColor: p.bg_color,
+  density: p.density ?? 1,
   view: { x: p.view_x, y: p.view_y, zoom: p.zoom },
 });
 
@@ -141,14 +143,15 @@ api.patch('/projects/:id', (req, res) => {
   if (typeof b.name === 'string') next.name = b.name.trim().slice(0, 120) || 'Untitled';
   if (['dots', 'grid', 'plain'].includes(b.pattern)) next.pattern = b.pattern;
   if (typeof b.bgColor === 'string' && /^#[0-9a-f]{6}$/i.test(b.bgColor)) next.bg_color = b.bgColor;
+  if (typeof b.density === 'number' && b.density >= 0.25 && b.density <= 4) next.density = b.density;
   if (b.view) {
     next.view_x = num(b.view.x, 'view');
     next.view_y = num(b.view.y, 'view');
     next.zoom = num(b.view.zoom, 'zoom');
   }
   db.prepare(
-    `UPDATE projects SET name = ?, pattern = ?, bg_color = ?, view_x = ?, view_y = ?, zoom = ?, updated_at = ? WHERE id = ?`,
-  ).run(next.name, next.pattern, next.bg_color, next.view_x, next.view_y, next.zoom, Date.now(), p.id);
+    `UPDATE projects SET name = ?, pattern = ?, bg_color = ?, density = ?, view_x = ?, view_y = ?, zoom = ?, updated_at = ? WHERE id = ?`,
+  ).run(next.name, next.pattern, next.bg_color, next.density, next.view_x, next.view_y, next.zoom, Date.now(), p.id);
   res.json(projectJson(getProject(p.id)!));
 });
 

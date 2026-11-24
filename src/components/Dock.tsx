@@ -5,6 +5,17 @@ import { TAB_DRAG_TYPE, type CanvasApi } from './Canvas';
 import { Menu, Popover } from './ui';
 
 export const SWATCHES = ['#FFFFFF', '#F7F7F5', '#F1EEE8', '#ECEEF1', '#E8ECE6', '#2B2B29', '#191919', '#0D0D0F'];
+const DENSITIES = [
+  { value: 0.5, name: 'Sparse' },
+  { value: 0.7, name: 'Airy' },
+  { value: 1, name: 'Default' },
+  { value: 1.4, name: 'Tight' },
+  { value: 2, name: 'Dense' },
+];
+const densityIndex = (d: number) =>
+  DENSITIES.reduce((best, x, i) => (Math.abs(x.value - d) < Math.abs(DENSITIES[best].value - d) ? i : best), 0);
+const densityName = (d: number) => DENSITIES[densityIndex(d)].name;
+
 export const PATTERNS: { id: Pattern; label: string; icon: React.ReactNode }[] = [
   { id: 'dots', label: 'Dots', icon: <Grip /> },
   { id: 'grid', label: 'Grid', icon: <Grid3x3 /> },
@@ -21,7 +32,7 @@ interface Props {
   onRename: (id: string, name: string) => void;
   onDelete: (p: Project) => void;
   onReorder: (ids: string[]) => void;
-  onBackground: (patch: Partial<Pick<Project, 'pattern' | 'bgColor'>>) => void;
+  onBackground: (patch: Partial<Pick<Project, 'pattern' | 'bgColor' | 'density'>>) => void;
   onShowKeys: () => void;
   settingsOpen: boolean;
   onToggleSettings: () => void;
@@ -211,6 +222,26 @@ export function Dock(p: Props) {
               </button>
             ))}
           </div>
+          {p.active.pattern !== 'plain' && (
+            <>
+              <div className="pop-label row">
+                <span>Density</span>
+                <span className="pop-value">{densityName(p.active.density)}</span>
+              </div>
+              <input
+                type="range"
+                className="slider"
+                min={0}
+                max={DENSITIES.length - 1}
+                step={1}
+                value={densityIndex(p.active.density)}
+                onChange={(e) => p.onBackground({ density: DENSITIES[Number(e.target.value)].value })}
+                onDoubleClick={() => p.onBackground({ density: 1 })}
+                aria-label="Pattern density"
+                style={{ ['--fill' as string]: `${(densityIndex(p.active.density) / (DENSITIES.length - 1)) * 100}%` }}
+              />
+            </>
+          )}
           <div className="pop-label">Color</div>
           <div className="swatches">
             {SWATCHES.map((c) => (

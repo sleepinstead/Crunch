@@ -12,6 +12,8 @@ export interface Project {
   position: number;
   pattern: Pattern;
   bgColor: string;
+  /** Pattern density: >1 packs dots/lines tighter, <1 spreads them out. */
+  density: number;
   view: View;
 }
 
@@ -73,7 +75,7 @@ export const api = {
 
   listProjects: () => req<Project[]>('GET', '/api/projects'),
   createProject: (name?: string) => req<Project>('POST', '/api/projects', { name }),
-  updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'pattern' | 'bgColor' | 'view'>>) =>
+  updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'pattern' | 'bgColor' | 'density' | 'view'>>) =>
     req<Project>('PATCH', `/api/projects/${id}`, patch),
   reorderProjects: (ids: string[]) => req('POST', '/api/projects/reorder', { ids }),
   deleteProject: (id: string) => req('DELETE', `/api/projects/${id}`),

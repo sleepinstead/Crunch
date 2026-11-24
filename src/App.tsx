@@ -221,7 +221,7 @@ export function App() {
         />
       )}
       {settings.showName && <div className="brand">Crunch</div>}
-      {settingsOpen && <SettingsPanel settings={settings} onChange={changeSettings} onClose={closeSettings} />}
+      <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closeSettings} />
       <Toasts toasts={toasts} />
       {confirmDelete && (
         <ConfirmDialog

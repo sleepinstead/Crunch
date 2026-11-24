@@ -53,24 +53,63 @@ function Row({ title, text, children, stack }: { title: string; text?: string; c
 const formatBytes = (b: number) =>
   b < 1024 ? `${b} B` : b < 1024 ** 2 ? `${(b / 1024).toFixed(0)} KB` : b < 1024 ** 3 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${(b / 1024 ** 3).toFixed(2)} GB`;
 
-export function SettingsPanel({
-  settings,
-  onChange,
-  onClose,
-}: {
+/**
+ * Stays mounted through the exit so it can slide out. Uses CSS transitions
+ * (not keyframes) so reopening mid-close reverses smoothly from where it is.
+ */
+export function SettingsPanel(props: {
+  open: boolean;
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
+}) {
+  const [mounted, setMounted] = useState(props.open);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    if (props.open) {
+      setMounted(true);
+      // Two frames so the off-screen start position is painted before transitioning.
+      let raf2 = 0;
+      const raf1 = requestAnimationFrame(() => (raf2 = requestAnimationFrame(() => setShown(true))));
+      return () => {
+        cancelAnimationFrame(raf1);
+        cancelAnimationFrame(raf2);
+      };
+    }
+    setShown(false);
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) setMounted(false);
+  }, [props.open]);
+
+  if (!mounted) return null;
+  return <Panel {...props} shown={shown} onExited={() => !props.open && setMounted(false)} />;
+}
+
+function Panel({
+  open,
+  shown,
+  settings,
+  onChange,
+  onClose,
+  onExited,
+}: {
+  open: boolean;
+  shown: boolean;
+  settings: Settings;
+  onChange: (patch: Partial<Settings>) => void;
+  onClose: () => void;
+  onExited: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    api.stats().then(setStats).catch(() => {});
-  }, []);
+    if (open) api.stats().then(setStats).catch(() => {});
+  }, [open]);
 
   useEffect(() => {
+    if (!open) return;
     const key = (e: KeyboardEvent) => e.key === 'Escape' && !document.querySelector('.scrim') && onClose();
     const down = (e: PointerEvent) => {
       const t = e.target as HTMLElement;
@@ -83,12 +122,19 @@ export function SettingsPanel({
       window.removeEventListener('keydown', key);
       window.removeEventListener('pointerdown', down, true);
     };
-  }, [onClose]);
+  }, [open, onClose]);
 
   const s = settings;
 
   return (
-    <aside ref={ref} className="settings drawer-in" aria-label="Settings">
+    <aside
+      ref={ref}
+      className={`settings${shown ? ' shown' : ''}`}
+      aria-label="Settings"
+      aria-hidden={!open}
+      inert={!open}
+      onTransitionEnd={(e) => e.target === ref.current && e.propertyName === 'transform' && onExited()}
+    >
       <header className="settings-head">
         <div>
           <div className="settings-title">Settings</div>

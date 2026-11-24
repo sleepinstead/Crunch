@@ -45,6 +45,7 @@ interface ItemRow {
   w: number;
   h: number;
   z: number;
+  rotation: number;
   file: string;
   nw: number;
   nh: number;
@@ -60,6 +61,7 @@ const itemJson = (i: ItemRow) => ({
   w: i.w,
   h: i.h,
   z: i.z,
+  rotation: i.rotation,
   src: `/files/${i.file}`,
   naturalW: i.nw,
   naturalH: i.nh,
@@ -181,10 +183,10 @@ api.put('/items', (req, res) => {
   if (!Array.isArray(list)) throw new HttpError(400, 'Expected an array of items.');
   const now = Date.now();
   const stmt = db.prepare(
-    `INSERT INTO items (id, project_id, asset_id, x, y, w, h, z, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO items (id, project_id, asset_id, x, y, w, h, z, rotation, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h,
-       z = excluded.z, updated_at = excluded.updated_at`,
+       z = excluded.z, rotation = excluded.rotation, updated_at = excluded.updated_at`,
   );
   tx(() => {
     for (const it of list) {
@@ -198,6 +200,7 @@ api.put('/items', (req, res) => {
         num(it.w, 'w'),
         num(it.h, 'h'),
         num(it.z, 'z'),
+        it.rotation === undefined ? 0 : num(it.rotation, 'rotation'),
         now,
         now,
       );

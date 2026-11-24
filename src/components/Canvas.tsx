@@ -9,6 +9,8 @@ import {
   Image as ImageIcon,
   Link2,
   Maximize,
+  RotateCcw,
+  RotateCw,
   MousePointer2,
   Trash2,
   Upload,
@@ -52,7 +54,17 @@ type Mode =
       alt: boolean;
       reduceTo: string | null;
     }
-  | { type: 'resize'; id: string; corner: Corner; before: Item; ax: number; ay: number; ratio: number }
+  | {
+      type: 'resize';
+      id: string;
+      before: Item;
+      ax: number;
+      ay: number;
+      dirX: number;
+      dirY: number;
+      ratio: number;
+    }
+  | { type: 'rotate'; id: string; cx: number; cy: number; start: number; before: Item }
   | { type: 'marquee'; wx: number; wy: number; base: Set<string> };
 
 interface Props {
@@ -76,10 +88,24 @@ const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 const modalOpen = () => !!document.querySelector('.scrim');
 
-function boundsOf(items: Item[]): Rect | null {
+const RAD = Math.PI / 180;
+
+/** Axis-aligned box around a (possibly rotated) item. */
+function aabb(i: Rect & { rotation?: number }): Rect {
+  const r = (i.rotation ?? 0) * RAD;
+  if (!r) return { x: i.x, y: i.y, w: i.w, h: i.h };
+  const c = Math.abs(Math.cos(r));
+  const s = Math.abs(Math.sin(r));
+  const w = i.w * c + i.h * s;
+  const h = i.w * s + i.h * c;
+  return { x: i.x + i.w / 2 - w / 2, y: i.y + i.h / 2 - h / 2, w, h };
+}
+
+function boundsOf(items: (Rect & { rotation?: number })[]): Rect | null {
   if (!items.length) return null;
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-  for (const i of items) {
+  for (const it of items) {
+    const i = aabb(it);
     x1 = Math.min(x1, i.x);
     y1 = Math.min(y1, i.y);
     x2 = Math.max(x2, i.x + i.w);
@@ -87,6 +113,11 @@ function boundsOf(items: Item[]): Rect | null {
   }
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
 }
+
+const normDeg = (d: number) => {
+  const n = (((d + 180) % 360) + 360) % 360 - 180;
+  return Math.abs(n) < 1e-6 ? 0 : n;
+};
 
 /** Lay new images out in tidy rows of equal height, centered on a point. */
 function layout(assets: Asset[], center: { x: number; y: number }, zoom: number, gapPx = 20, scale = 1) {
@@ -129,7 +160,7 @@ function layout(assets: Asset[], center: { x: number; y: number }, zoom: number,
 
 /** Shift a block of rects to the nearest spot (spiraling outward) where it covers nothing. */
 function avoidOverlap(rects: Rect[], existing: Rect[], zoom: number, gapPx = 20): Rect[] {
-  const block = boundsOf(rects as Item[]);
+  const block = boundsOf(rects);
   if (!block || !existing.length) return rects;
   const gap = gapPx / zoom;
   const hits = (dx: number, dy: number) =>
@@ -182,7 +213,11 @@ const ItemView = memo(function ItemView({ item }: { item: Item }) {
     <div
       className="item"
       data-item-id={item.id}
-      style={{ transform: `translate(${item.x}px, ${item.y}px)`, width: item.w, height: item.h }}
+      style={{
+        transform: `translate(${item.x}px, ${item.y}px)${item.rotation ? ` rotate(${item.rotation}deg)` : ''}`,
+        width: item.w,
+        height: item.h,
+      }}
     >
       <img src={item.src} alt="" draggable={false} decoding="async" />
     </div>
@@ -214,6 +249,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<(Rect & { id: string })[]>([]);
   const [marquee, setMarquee] = useState<Rect | null>(null);
+  const [rotLabel, setRotLabel] = useState<{ x: number; y: number; deg: number } | null>(null);
   const [interacting, setInteracting] = useState(false);
   const [spaceDown, setSpaceDown] = useState(false);
   const [panning, setPanning] = useState(false);
@@ -460,6 +496,20 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     [commit],
   );
 
+  const rotateSelection = useCallback(
+    (by: number | 'reset') => {
+      const sel = selectedItems();
+      if (!sel.length) return;
+      commit(
+        Object.fromEntries(sel.map((i) => [i.id, i])),
+        Object.fromEntries(
+          sel.map((i) => [i.id, { ...i, rotation: by === 'reset' ? 0 : normDeg((i.rotation ?? 0) + by) }]),
+        ),
+      );
+    },
+    [commit],
+  );
+
   const nudge = useCallback(
     (dx: number, dy: number) => {
       const sel = selectedItems();
@@ -514,7 +564,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       const gapPx = GAP_PX[settingsRef.current.imageGap];
       const scale = SIZE_SCALE[settingsRef.current.imageSize];
       const place = (rects: Rect[]) =>
-        exact ? rects : avoidOverlap(rects, Object.values(itemsRef.current), v.zoom, gapPx);
+        exact ? rects : avoidOverlap(rects, Object.values(itemsRef.current).map(aabb), v.zoom, gapPx);
       const ph = place(
         layout(
           sources.map(() => ({ id: '', src: '', width: 4, height: 3, sourceUrl: null })),
@@ -551,6 +601,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
         ...rects[i],
         z: ++z,
         src: a.src,
+        rotation: 0,
         naturalW: a.width,
         naturalH: a.height,
         sourceUrl: a.sourceUrl,
@@ -666,6 +717,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
         zoomToFit();
       } else if (e.shiftKey && e.code === 'Digit0') {
         zoomTo(1);
+      } else if (e.shiftKey && e.code === 'KeyR') {
+        rotateSelection(90);
       } else if (k === ']') {
         restack('front');
       } else if (k === '[') {
@@ -698,7 +751,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, [travel, duplicateSelection, deleteSelection, zoomBy, zoomTo, zoomToFit, restack, nudge]);
+  }, [travel, duplicateSelection, deleteSelection, zoomBy, zoomTo, zoomToFit, restack, nudge, rotateSelection]);
 
   // Wheel: two-finger scroll pans, pinch / ⌘-scroll zooms toward the cursor.
   useEffect(() => {
@@ -751,15 +804,33 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       const id = handle.dataset.for!;
       const it = itemsRef.current[id];
       const corner = handle.dataset.handle as Corner;
+      const dirX = corner.includes('w') ? -1 : 1;
+      const dirY = corner.includes('n') ? -1 : 1;
+      // The anchor is the opposite corner, in world space (accounting for rotation).
+      const r = (it.rotation ?? 0) * RAD;
+      const ox = (-dirX * it.w) / 2;
+      const oy = (-dirY * it.h) / 2;
       mode.current = {
         type: 'resize',
         id,
-        corner,
         before: it,
-        ax: corner.includes('w') ? it.x + it.w : it.x,
-        ay: corner.includes('n') ? it.y + it.h : it.y,
+        ax: it.x + it.w / 2 + ox * Math.cos(r) - oy * Math.sin(r),
+        ay: it.y + it.h / 2 + ox * Math.sin(r) + oy * Math.cos(r),
+        dirX,
+        dirY,
         ratio: it.w / it.h,
       };
+      setInteracting(true);
+      return;
+    }
+
+    const rot = target.closest<HTMLElement>('[data-rotate]');
+    if (rot) {
+      const it = itemsRef.current[rot.dataset.for!];
+      const p = toWorld(e.clientX, e.clientY);
+      const cx = it.x + it.w / 2;
+      const cy = it.y + it.h / 2;
+      mode.current = { type: 'rotate', id: it.id, cx, cy, start: Math.atan2(p.y - cy, p.x - cx), before: it };
       setInteracting(true);
       return;
     }
@@ -839,20 +910,35 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       setItems(next);
     } else if (m.type === 'resize') {
       const p = toWorld(e.clientX, e.clientY);
-      const sx = m.corner.includes('w') ? m.ax - p.x : p.x - m.ax;
-      const sy = m.corner.includes('n') ? m.ay - p.y : p.y - m.ay;
+      const a = (m.before.rotation ?? 0) * RAD;
+      const cos = Math.cos(a);
+      const sin = Math.sin(a);
+      // Pointer relative to the anchor, in the image's own (unrotated) frame.
+      const dx = p.x - m.ax;
+      const dy = p.y - m.ay;
+      const sx = (dx * cos + dy * sin) * m.dirX;
+      const sy = (-dx * sin + dy * cos) * m.dirY;
       // Project onto the diagonal so the aspect ratio is kept.
       const r = m.ratio;
       const w = Math.max(16 / v.zoom, (sx + sy / r) / (1 + 1 / (r * r)));
       const h = w / r;
-      const it = {
-        ...m.before,
-        w,
-        h,
-        x: m.corner.includes('w') ? m.ax - w : m.ax,
-        y: m.corner.includes('n') ? m.ay - h : m.ay,
-      };
-      setItems({ ...itemsRef.current, [m.id]: it });
+      const hx = (m.dirX * w) / 2;
+      const hy = (m.dirY * h) / 2;
+      const cx = m.ax + hx * cos - hy * sin;
+      const cy = m.ay + hx * sin + hy * cos;
+      setItems({ ...itemsRef.current, [m.id]: { ...m.before, w, h, x: cx - w / 2, y: cy - h / 2 } });
+    } else if (m.type === 'rotate') {
+      const p = toWorld(e.clientX, e.clientY);
+      let deg = (m.before.rotation ?? 0) + (Math.atan2(p.y - m.cy, p.x - m.cx) - m.start) / RAD;
+      if (e.shiftKey) deg = Math.round(deg / 15) * 15;
+      else {
+        // Gentle magnet at right angles.
+        const right = Math.round(deg / 90) * 90;
+        if (Math.abs(deg - right) < 2.5) deg = right;
+      }
+      deg = normDeg(deg);
+      setRotLabel({ x: e.clientX, y: e.clientY, deg });
+      setItems({ ...itemsRef.current, [m.id]: { ...m.before, rotation: deg } });
     } else if (m.type === 'marquee') {
       const p = toWorld(e.clientX, e.clientY);
       const rect = { x: Math.min(m.wx, p.x), y: Math.min(m.wy, p.y), w: Math.abs(p.x - m.wx), h: Math.abs(p.y - m.wy) };
@@ -860,8 +946,9 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       if (!marquee) setInteracting(true);
       setMarquee(rect);
       const hit = new Set(m.base);
-      for (const it of Object.values(itemsRef.current)) {
-        if (it.x < rect.x + rect.w && it.x + it.w > rect.x && it.y < rect.y + rect.h && it.y + it.h > rect.y) hit.add(it.id);
+      for (const item of Object.values(itemsRef.current)) {
+        const it = aabb(item);
+        if (it.x < rect.x + rect.w && it.x + it.w > rect.x && it.y < rect.y + rect.h && it.y + it.h > rect.y) hit.add(item.id);
       }
       setSelection(hit);
     }
@@ -872,6 +959,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     mode.current = null;
     setInteracting(false);
     setPanning(false);
+    setRotLabel(null);
     if (!m) return;
     if (m.type === 'move') {
       if (m.moved) commit(m.before, Object.fromEntries(m.ids.map((id) => [id, itemsRef.current[id]])));
@@ -879,6 +967,9 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     } else if (m.type === 'resize') {
       const now = itemsRef.current[m.id];
       if (now && (now.w !== m.before.w || now.h !== m.before.h)) commit({ [m.id]: m.before }, { [m.id]: now });
+    } else if (m.type === 'rotate') {
+      const now = itemsRef.current[m.id];
+      if (now && now.rotation !== m.before.rotation) commit({ [m.id]: m.before }, { [m.id]: now });
     } else if (m.type === 'marquee') {
       setMarquee(null);
     }
@@ -888,7 +979,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     const el = (e.target as HTMLElement).closest<HTMLElement>('[data-item-id]');
     if (!el) return;
     const it = itemsRef.current[el.dataset.itemId!];
-    if (it) fitRect(it, Math.max(1, it.naturalW / it.w));
+    if (it) fitRect(aabb(it), Math.max(1, it.naturalW / it.w));
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -966,6 +1057,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       { label: 'Bring to front', icon: <ArrowUpToLine />, shortcut: ']', onSelect: () => restack('front') },
       { label: 'Send to back', icon: <ArrowDownToLine />, shortcut: '[', onSelect: () => restack('back') },
       'sep',
+      { label: 'Rotate 90°', icon: <RotateCw />, shortcut: '⇧R', onSelect: () => rotateSelection(90) },
+      ...(selected.some((i) => i.rotation)
+        ? ([{ label: 'Reset rotation', icon: <RotateCcw />, onSelect: () => rotateSelection('reset') }] as MenuEntry[])
+        : []),
+      'sep',
       { label: 'Copy', icon: <Copy />, shortcut: `${MOD}C`, onSelect: copySelection },
       { label: 'Duplicate', icon: <CopyPlus />, shortcut: `${MOD}D`, onSelect: duplicateSelection },
       ...(one
@@ -1027,8 +1123,16 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
               <div
                 key={it.id}
                 className="sel-box"
-                style={{ transform: `translate(${it.x}px, ${it.y}px)`, width: it.w, height: it.h }}
+                style={{
+                  transform: `translate(${it.x}px, ${it.y}px)${it.rotation ? ` rotate(${it.rotation}deg)` : ''}`,
+                  width: it.w,
+                  height: it.h,
+                }}
               >
+                {selected.length === 1 &&
+                  (['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
+                    <div key={`r${c}`} className={`rot ${c}`} data-rotate={c} data-for={it.id} />
+                  ))}
                 {selected.length === 1 &&
                   (['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
                     <div key={c} className={`handle ${c}`} data-handle={c} data-for={it.id} />
@@ -1072,6 +1176,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
           </div>
         )}
         {dragOver && <div className="drop-ring" />}
+        {rotLabel && (
+          <div className="rot-label" style={{ left: rotLabel.x + 14, top: rotLabel.y + 14 }}>
+            {Math.round(rotLabel.deg)}°
+          </div>
+        )}
       </div>
 
       {chrome(canvasApi, interacting)}

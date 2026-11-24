@@ -48,6 +48,8 @@ Back up `data/` to back up everything.
 | Double-click image | Focus it |
 | Drag corners | Resize (aspect locked) |
 | ⌥-drag | Duplicate while moving |
+| Drag just outside a corner | Rotate (⇧ snaps to 15°) |
+| ⇧R | Rotate 90° |
 | ⌘D, ⌘C, ⌫ | Duplicate, copy, delete |
 | `[` `]` | Send to back / bring to front |
 | ⌘Z / ⇧⌘Z | Undo / redo |

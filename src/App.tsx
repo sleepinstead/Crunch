@@ -37,6 +37,8 @@ const SHORTCUTS: [string, string][] = [
   ['⇧ 0', 'Zoom to 100%'],
   ['Double-click', 'Focus an image'],
   ['⌥ drag', 'Duplicate while moving'],
+  ['Drag outside a corner', 'Rotate (⇧ snaps 15°)'],
+  ['⇧ R', 'Rotate 90°'],
   [`${M} D`, 'Duplicate'],
   ['[  ]', 'Send back / bring front'],
   [`${M} Z`, 'Undo'],

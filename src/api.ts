@@ -32,6 +32,7 @@ export interface Item {
   w: number;
   h: number;
   z: number;
+  rotation: number; // degrees, around the center
   src: string;
   naturalW: number;
   naturalH: number;

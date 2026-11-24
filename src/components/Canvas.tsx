@@ -877,18 +877,9 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       return;
     }
 
-    // Empty canvas: drag pans (⇧-drag selects), or the reverse if set so in Settings.
-    const selects = settingsRef.current.emptyDrag === 'select' ? !e.shiftKey : e.shiftKey;
-    if (!selects) {
-      setSelection(new Set());
-      mode.current = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y, started: false };
-      setPanning(true);
-      return;
-    }
     const w = toWorld(e.clientX, e.clientY);
-    const keep = settingsRef.current.emptyDrag === 'select' ? e.shiftKey : true;
-    const base = keep ? new Set(selRef.current) : new Set<string>();
-    if (!keep) setSelection(new Set());
+    const base = e.shiftKey ? new Set(selRef.current) : new Set<string>();
+    if (!e.shiftKey) setSelection(new Set());
     mode.current = { type: 'marquee', wx: w.x, wy: w.y, base };
   };
 
@@ -1109,7 +1100,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     ];
   };
 
-  const cursor = panning ? 'grabbing' : spaceDown || settings.emptyDrag === 'pan' ? 'grab' : undefined;
+  const cursor = panning ? 'grabbing' : spaceDown ? 'grab' : undefined;
 
   return (
     <>

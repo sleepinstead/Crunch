@@ -30,8 +30,7 @@ const M = IS_MAC ? '⌘' : 'Ctrl';
 const SHORTCUTS: [string, string][] = [
   [`${M} V`, 'Paste image or link'],
   ['Drop', 'Add files or web images'],
-  ['Drag empty canvas', 'Pan'],
-  ['⇧ drag empty canvas', 'Select area'],
+  ['Drag empty canvas', 'Select area'],
   ['Space + drag', 'Pan'],
   ['Scroll', 'Pan'],
   [`Pinch / ${M} scroll`, 'Zoom'],

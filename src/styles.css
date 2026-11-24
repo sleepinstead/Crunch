@@ -162,6 +162,7 @@ svg {
 
 .item {
   background: rgba(127, 127, 127, 0.08);
+  cursor: default;
 }
 
 .item img {

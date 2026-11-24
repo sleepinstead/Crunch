@@ -42,7 +42,7 @@ interface Rect {
 type Corner = 'nw' | 'ne' | 'sw' | 'se';
 
 type Mode =
-  | { type: 'pan'; sx: number; sy: number; vx: number; vy: number }
+  | { type: 'pan'; sx: number; sy: number; vx: number; vy: number; started: boolean }
   | {
       type: 'move';
       sx: number;
@@ -188,40 +188,29 @@ function avoidOverlap(rects: Rect[], existing: Rect[], zoom: number, gapPx = 20)
 }
 
 /**
- * Infinite pattern. Two layers one octave apart are drawn at once; as you zoom,
- * the finer layer fades in or out, so the spacing never visibly jumps.
+ * Background pattern in screen space: spacing and dot size never change with
+ * zoom (only images scale), but it follows the canvas when you pan.
  */
 function backgroundStyle(project: Project, v: View): CSSProperties {
   const style: CSSProperties = { backgroundColor: project.bgColor };
   if (project.pattern === 'plain') return style;
   const dark = isDark(project.bgColor);
-  const dots = project.pattern === 'dots';
   const density = project.density || 1;
-  // Zoom sets the phase within an octave; density scales on-screen spacing directly
-  // (scaling world spacing instead would be cancelled out by the octave blend).
-  const baseMin = dots ? 11 : 14;
-  const k = Math.log2(((dots ? 22 : 32) * v.zoom) / baseMin);
-  const frac = k - Math.floor(k); // 0 → fine layer about to vanish, 1 → fully grown
-  const fine = (baseMin / Math.pow(density, 0.8)) * Math.pow(2, frac);
-  const coarse = fine * 2;
-  const r0 = 1.1 * Math.min(1, Math.pow(density, -0.3)); // smaller dots when packed tighter
-  const t = frac * frac * (3 - 2 * frac); // smoothstep
-
   const rgb = dark ? '255,255,255' : '0,0,0';
-  if (dots) {
-    const a = 0.17;
-    const dot = (step: number, alpha: number, r: number) =>
-      `radial-gradient(circle at ${step / 2}px ${step / 2}px, rgba(${rgb},${alpha}) ${r}px, transparent ${r + 0.7}px)`;
-    style.backgroundImage = `${dot(coarse, a, r0)}, ${dot(fine, a * t, r0 * (0.6 + 0.4 * t))}`;
-    style.backgroundSize = `${coarse}px ${coarse}px, ${fine}px ${fine}px`;
-    style.backgroundPosition = `${v.x - coarse / 2}px ${v.y - coarse / 2}px, ${v.x - fine / 2}px ${v.y - fine / 2}px`;
+  const scale = Math.pow(density, 0.8);
+
+  if (project.pattern === 'dots') {
+    const step = 22 / scale;
+    const r = 1.1 * Math.min(1, Math.pow(density, -0.3));
+    style.backgroundImage = `radial-gradient(circle at ${step / 2}px ${step / 2}px, rgba(${rgb},0.17) ${r}px, transparent ${r + 0.7}px)`;
+    style.backgroundSize = `${step}px ${step}px`;
+    style.backgroundPosition = `${v.x - step / 2}px ${v.y - step / 2}px`;
   } else {
+    const step = 32 / scale;
     const a = dark ? 0.07 : 0.065;
-    const lines = (alpha: number) =>
-      `linear-gradient(to right, rgba(${rgb},${alpha}) 1px, transparent 1px), linear-gradient(to bottom, rgba(${rgb},${alpha}) 1px, transparent 1px)`;
-    style.backgroundImage = `${lines(a)}, ${lines(a * t)}`;
-    style.backgroundSize = `${coarse}px ${coarse}px, ${coarse}px ${coarse}px, ${fine}px ${fine}px, ${fine}px ${fine}px`;
-    style.backgroundPosition = `${v.x}px ${v.y}px, ${v.x}px ${v.y}px, ${v.x}px ${v.y}px, ${v.x}px ${v.y}px`;
+    style.backgroundImage = `linear-gradient(to right, rgba(${rgb},${a}) 1px, transparent 1px), linear-gradient(to bottom, rgba(${rgb},${a}) 1px, transparent 1px)`;
+    style.backgroundSize = `${step}px ${step}px`;
+    style.backgroundPosition = `${v.x}px ${v.y}px`;
   }
   return style;
 }
@@ -806,12 +795,16 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     if (e.button !== 0 && e.button !== 1) return;
     if (anim.current) cancelAnimationFrame(anim.current);
     const target = e.target as HTMLElement;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* pointer already gone */
+    }
     const v = viewRef.current;
 
     if (e.button === 1 || spaceRef.current) {
       e.preventDefault();
-      mode.current = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y };
+      mode.current = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y, started: true };
       setPanning(true);
       setInteracting(true);
       return;
@@ -884,9 +877,18 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       return;
     }
 
+    // Empty canvas: drag pans (⇧-drag selects), or the reverse if set so in Settings.
+    const selects = settingsRef.current.emptyDrag === 'select' ? !e.shiftKey : e.shiftKey;
+    if (!selects) {
+      setSelection(new Set());
+      mode.current = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y, started: false };
+      setPanning(true);
+      return;
+    }
     const w = toWorld(e.clientX, e.clientY);
-    const base = e.shiftKey ? new Set(selRef.current) : new Set<string>();
-    if (!e.shiftKey) setSelection(new Set());
+    const keep = settingsRef.current.emptyDrag === 'select' ? e.shiftKey : true;
+    const base = keep ? new Set(selRef.current) : new Set<string>();
+    if (!keep) setSelection(new Set());
     mode.current = { type: 'marquee', wx: w.x, wy: w.y, base };
   };
 
@@ -897,6 +899,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     const v = viewRef.current;
 
     if (m.type === 'pan') {
+      if (!m.started) {
+        if (Math.hypot(e.clientX - m.sx, e.clientY - m.sy) < 3) return;
+        m.started = true;
+        setInteracting(true);
+      }
       setView({ ...v, x: m.vx + e.clientX - m.sx, y: m.vy + e.clientY - m.sy });
     } else if (m.type === 'move') {
       const dsx = e.clientX - m.sx;
@@ -1102,7 +1109,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     ];
   };
 
-  const cursor = panning ? 'grabbing' : spaceDown ? 'grab' : undefined;
+  const cursor = panning ? 'grabbing' : spaceDown || settings.emptyDrag === 'pan' ? 'grab' : undefined;
 
   return (
     <>

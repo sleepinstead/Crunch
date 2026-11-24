@@ -6,6 +6,7 @@ export interface Settings {
   imageGap: 'tight' | 'normal' | 'loose';
   imageSize: 'small' | 'medium' | 'large';
   wheel: 'pan' | 'zoom';
+  emptyDrag: 'pan' | 'select';
   showName: boolean;
   fadeDock: boolean;
   newPattern: Pattern;
@@ -18,6 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
   imageGap: 'normal',
   imageSize: 'medium',
   wheel: 'pan',
+  emptyDrag: 'pan',
   showName: true,
   fadeDock: true,
   newPattern: 'dots',
@@ -35,6 +37,7 @@ export function normalizeSettings(raw: Record<string, unknown>): Settings {
     imageGap: oneOf(raw.imageGap, ['tight', 'normal', 'loose'] as const, d.imageGap),
     imageSize: oneOf(raw.imageSize, ['small', 'medium', 'large'] as const, d.imageSize),
     wheel: oneOf(raw.wheel, ['pan', 'zoom'] as const, d.wheel),
+    emptyDrag: oneOf(raw.emptyDrag, ['pan', 'select'] as const, d.emptyDrag),
     showName: typeof raw.showName === 'boolean' ? raw.showName : d.showName,
     fadeDock: typeof raw.fadeDock === 'boolean' ? raw.fadeDock : d.fadeDock,
     newPattern: oneOf(raw.newPattern, ['dots', 'grid', 'plain'] as const, d.newPattern),

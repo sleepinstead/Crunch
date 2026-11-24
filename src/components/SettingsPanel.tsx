@@ -191,6 +191,16 @@ function Panel({
         <section>
           <h3>Navigation</h3>
           <div className="set-card">
+            <Row title="Drag on empty canvas" text="Hold ⇧ for the other one.">
+              <Seg
+                value={s.emptyDrag}
+                onChange={(v) => onChange({ emptyDrag: v })}
+                options={[
+                  { value: 'pan', label: 'Move' },
+                  { value: 'select', label: 'Select' },
+                ]}
+              />
+            </Row>
             <Row title="Scroll wheel" text="Zoom suits a mouse. Pan suits a trackpad; pinch still zooms.">
               <Seg
                 value={s.wheel}

@@ -42,7 +42,8 @@ Back up `data/` to back up everything.
 
 | | |
 |---|---|
-| Scroll / Space-drag / middle-drag | Pan |
+| Drag empty canvas / scroll / Space-drag | Pan |
+| ⇧-drag empty canvas | Select area (swappable in Settings) |
 | Pinch / ⌘-scroll | Zoom |
 | ⇧1 / ⇧0 | Zoom to fit / 100% |
 | Double-click image | Focus it |

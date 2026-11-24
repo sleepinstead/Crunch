@@ -107,6 +107,7 @@ svg {
 .app {
   position: fixed;
   inset: 0;
+  color: var(--text);
 }
 
 /* ---------- brand ---------- */

@@ -1,0 +1,33 @@
+{
+  "name": "crunch",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local-first inspiration canvas",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "node server/index.ts",
+    "build": "vite build",
+    "start": "NODE_ENV=production node server/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
+    "express": "^5.3.0",
+    "image-size": "^2.1.0",
+    "lucide-react": "^1.79.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.7",
+    "@types/react": "^19.3.1",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

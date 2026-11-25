@@ -69,6 +69,16 @@ type Mode =
       ratio: number;
     }
   | { type: 'rotate'; id: string; cx: number; cy: number; start: number; before: Item }
+  | {
+      type: 'groupResize';
+      ax: number;
+      ay: number;
+      dirX: number;
+      dirY: number;
+      bw: number;
+      bh: number;
+      base: Record<string, Item>;
+    }
   | { type: 'marquee'; wx: number; wy: number; base: Set<string> };
 
 interface Props {
@@ -749,6 +759,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         setItems(next);
       }
       setSelection(new Set(m.origIds));
+    } else if (m.type === 'groupResize') {
+      setItems({ ...itemsRef.current, ...m.base });
     } else if (m.type === 'resize' || m.type === 'rotate') {
       setItems({ ...itemsRef.current, [m.id]: m.before });
     } else if (m.type === 'marquee') {
@@ -940,6 +952,26 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     }
 
     const handle = target.closest<HTMLElement>('[data-handle]');
+    if (handle && handle.dataset.for === '__group') {
+      // Scale every selected image together from the opposite side of the group box.
+      const name = handle.dataset.handle!;
+      const dirX = name.includes('w') ? -1 : name.includes('e') ? 1 : 0;
+      const dirY = name.includes('n') ? -1 : name.includes('s') ? 1 : 0;
+      const sel = selectedItems();
+      const b = boundsOf(sel)!;
+      mode.current = {
+        type: 'groupResize',
+        ax: dirX < 0 ? b.x + b.w : dirX > 0 ? b.x : b.x + b.w / 2,
+        ay: dirY < 0 ? b.y + b.h : dirY > 0 ? b.y : b.y + b.h / 2,
+        dirX,
+        dirY,
+        bw: b.w,
+        bh: b.h,
+        base: Object.fromEntries(sel.map((i) => [i.id, i])),
+      };
+      setInteracting(true);
+      return;
+    }
     if (handle) {
       const id = handle.dataset.for!;
       const it = itemsRef.current[id];
@@ -1082,6 +1114,26 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const cx = m.ax + hx * cos - hy * sin;
       const cy = m.ay + hx * sin + hy * cos;
       setItems({ ...itemsRef.current, [m.id]: { ...m.before, w, h, x: cx - w / 2, y: cy - h / 2 } });
+    } else if (m.type === 'groupResize') {
+      const p = toWorld(e.clientX, e.clientY);
+      const sx = (p.x - m.ax) * m.dirX;
+      const sy = (p.y - m.ay) * m.dirY;
+      const r = m.bw / m.bh;
+      const min = 16 / v.zoom;
+      let w: number;
+      if (!m.dirY) w = Math.max(min, sx);
+      else if (!m.dirX) w = Math.max(min, sy) * r;
+      else w = Math.max(min, (sx + sy / r) / (1 + 1 / (r * r)));
+      const k = w / m.bw;
+      const next = { ...itemsRef.current };
+      for (const it of Object.values(m.base)) {
+        const cx = m.ax + (it.x + it.w / 2 - m.ax) * k;
+        const cy = m.ay + (it.y + it.h / 2 - m.ay) * k;
+        const nw = it.w * k;
+        const nh = it.h * k;
+        next[it.id] = { ...it, w: nw, h: nh, x: cx - nw / 2, y: cy - nh / 2 };
+      }
+      setItems(next);
     } else if (m.type === 'rotate') {
       const p = toWorld(e.clientX, e.clientY);
       let deg = (m.before.rotation ?? 0) + (Math.atan2(p.y - m.cy, p.x - m.cx) - m.start) / RAD;
@@ -1116,6 +1168,10 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     if (m.type === 'move') {
       if (m.moved) commit(m.before, Object.fromEntries(m.ids.map((id) => [id, itemsRef.current[id]])));
       else if (m.reduceTo) setSelection(new Set([m.reduceTo]));
+    } else if (m.type === 'groupResize') {
+      const ids = Object.keys(m.base);
+      if (ids.some((id) => itemsRef.current[id]?.w !== m.base[id].w))
+        commit(m.base, Object.fromEntries(ids.map((id) => [id, itemsRef.current[id]])));
     } else if (m.type === 'resize') {
       const now = itemsRef.current[m.id];
       if (now && (now.w !== m.before.w || now.h !== m.before.h)) commit({ [m.id]: m.before }, { [m.id]: now });
@@ -1295,6 +1351,23 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
                   ))}
               </div>
             ))}
+            {selected.length > 1 &&
+              (() => {
+                const b = boundsOf(selected)!;
+                return (
+                  <div
+                    className="sel-box group"
+                    style={{ transform: `translate(${b.x}px, ${b.y}px)`, width: b.w, height: b.h }}
+                  >
+                    {(['n', 'e', 's', 'w'] as const).map((e) => (
+                      <div key={`e${e}`} className={`edge ${e}`} data-handle={e} data-for="__group" />
+                    ))}
+                    {(['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
+                      <div key={c} className={`handle ${c}`} data-handle={c} data-for="__group" />
+                    ))}
+                  </div>
+                );
+              })()}
             {marquee && (
               <div
                 className="marquee"

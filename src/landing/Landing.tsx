@@ -133,9 +133,13 @@ export default function Landing({ onOpenApp }: { onOpenApp: () => void }) {
         <section className="lp-cta">
           <Reveal className="lp-cta-inner">
             <h2 className="lp-h2 lp-h2--center">
-              Start your next board.
+              Your next board starts with{' '}
+              <span className="lp-key-inline" aria-label="Command V">
+                <kbd>⌘</kbd>
+                <kbd>V</kbd>
+              </span>
               <br />
-              <span>It's already on your Mac.</span>
+              <span>Copy any image or link, then paste it onto the canvas.</span>
             </h2>
             <button className="lp-btn lp-btn--dark lp-btn--large" onClick={open}>
               Open Crunch <ArrowRight size={17} />

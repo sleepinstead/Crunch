@@ -359,3 +359,33 @@
     transform: none;
   }
 }
+
+/* ⌘V as real keycaps inside the closing headline */
+.lp-key-inline {
+  display: inline-flex;
+  gap: 0.12em;
+  vertical-align: 0.08em;
+  color: inherit !important;
+}
+.lp-key-inline kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.05em;
+  height: 1.05em;
+  padding: 0 0.16em;
+  border-radius: 0.22em;
+  background: #fff;
+  color: var(--ink);
+  font: 600 0.72em/1 -apple-system, BlinkMacSystemFont, var(--font);
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 15, 15, 0.1),
+    0 0.06em 0 rgba(15, 15, 15, 0.12),
+    0 0.3em 0.6em -0.3em rgba(15, 15, 15, 0.3);
+}
+.lp-cta .lp-h2 > span:not(.lp-key-inline) {
+  display: inline-block;
+  margin-top: 0.35em;
+  font-size: 0.5em;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+}

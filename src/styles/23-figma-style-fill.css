@@ -1,0 +1,100 @@
+/* ---------- Figma-style fill ---------- */
+
+.fill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 4px 0 4px;
+  border-radius: 7px;
+  background: var(--surface-sunk);
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: box-shadow 0.12s;
+}
+.fill-row:hover {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+/* Only typing in the hex field lights the row; clicking the chip lights the chip. */
+.fill-row:has(.fill-hex:focus) {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.fill-chip {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-left: 3px;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4);
+  overflow: hidden;
+}
+.fill-chip.on {
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.4), 0 0 0 2px var(--accent);
+}
+.fill-mixed {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(#e03e3e, #dfab01, #0f7b6c, #2383e2, #9065b0, #e03e3e);
+}
+.fill-hex {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+}
+.fill-hex::placeholder {
+  color: var(--text-2);
+  text-transform: none;
+}
+.fill-auto,
+.fill-auto-tag {
+  flex-shrink: 0;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-3);
+  line-height: 22px;
+}
+.fill-auto:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.fill-pop {
+  width: 244px;
+  padding: 10px;
+  z-index: 70;
+}
+.fill-pop .cp {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.fill-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.fill-pop-label {
+  margin: 12px 0 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.fill-swatches {
+  display: grid;
+  grid-template-columns: repeat(9, 1fr);
+  gap: 5px;
+}
+.fill-swatches .swatch.small {
+  width: auto;
+  aspect-ratio: 1;
+  height: auto;
+}

@@ -1,0 +1,121 @@
+/* ---------- color picker ---------- */
+
+.cp {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.cp-field {
+  position: relative;
+  height: 140px;
+  border-radius: 8px;
+  background-image: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, transparent);
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.25);
+  cursor: crosshair;
+  touch-action: none;
+  outline-offset: 2px;
+}
+.cp-thumb,
+.cp-hue-thumb {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.3);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.cp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cp-hue {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  border-radius: 6px;
+  background: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00);
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.25);
+  cursor: pointer;
+  touch-action: none;
+  outline-offset: 3px;
+}
+.cp-hue-thumb {
+  top: 50%;
+}
+.cp-preview {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.3);
+}
+.swatch.custom {
+  border: 0;
+}
+
+.picker-pop {
+  width: 240px;
+  padding: 10px;
+  /* Closed: tucked toward the panel it came from. Exit is quick and accelerating. */
+  opacity: 0;
+  transform: translateX(-8px) scale(0.96);
+  transform-origin: left bottom;
+  transition:
+    opacity calc(0.12s * var(--motion)) ease-in,
+    transform calc(0.16s * var(--motion)) cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform, opacity;
+}
+.picker-pop.from-left {
+  transform: translateX(8px) scale(0.96);
+  transform-origin: right bottom;
+}
+.picker-pop.shown {
+  opacity: 1;
+  transform: none;
+  /* Enter: quick start, soft settle. */
+  transition:
+    opacity calc(0.18s * var(--motion)) ease-out,
+    transform calc(0.32s * var(--motion)) cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .picker-pop,
+  .picker-pop.shown {
+    transition: opacity 0.12s linear;
+    transform: none;
+  }
+}
+/* While dragging in the picker the canvas follows the pointer exactly, with no fade lag. */
+[data-color-dragging] .canvas,
+[data-color-dragging] .bg-chip,
+[data-color-dragging] .swatch {
+  transition: none;
+}
+.picker-pop .cp {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.trash-thumb img.missing {
+  visibility: hidden;
+}
+.trash-thumb:has(img.missing)::before {
+  content: 'File missing';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* Multi-select: each image gets a quiet outline, the group box carries the handles (Figma). */
+.overlay:has(.sel-box.group) .sel-box:not(.group)::before {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}

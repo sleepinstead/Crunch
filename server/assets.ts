@@ -41,6 +41,25 @@ const TYPES: Record<string, { ext: string; mime: string }> = {
 /** Stored file names: 32 hex characters of the content hash and a known extension. */
 export const FILE_NAME = /^[0-9a-f]{32}\.(jpg|png|gif|webp|svg|avif|bmp|ico|tiff|heic|jxl)$/;
 
+/** Small previews, drawn at low zoom instead of the full file: images/thumbs/<hash>.webp */
+export const thumbName = (file: string) => `${file.slice(0, 32)}.webp`;
+export const thumbPath = (store: Pick<Store, 'imagesDir'>, file: string) => path.join(store.imagesDir, 'thumbs', thumbName(file));
+
+/** Save a preview made by the browser. Only small WebP/PNG/JPEG images are accepted. */
+export function storeThumb(store: Store, file: string, buf: Buffer) {
+  if (!FILE_NAME.test(file)) throw new HttpError(400, 'Invalid image.');
+  if (!buf.length || buf.length > 2 * 1024 * 1024) throw new HttpError(413, 'Preview too large.');
+  let info;
+  try {
+    info = imageSize(buf);
+  } catch {
+    throw new HttpError(415, 'Not an image.');
+  }
+  if (!['webp', 'png', 'jpg'].includes(info.type ?? '') || (info.width ?? 0) > 1024 || (info.height ?? 0) > 1024)
+    throw new HttpError(415, 'Previews must be WebP, PNG or JPEG, at most 1024 px.');
+  writeAtomic(thumbPath(store, file), buf);
+}
+
 /** Absolute path of a stored image, or null if the name is not one Crunch writes. */
 export function imagePath(store: Pick<Store, 'imagesDir'>, file: string): string | null {
   if (!FILE_NAME.test(file)) return null;
@@ -141,6 +160,28 @@ function writeAtomic(target: string, buf: Buffer) {
 }
 
 /** Remove files queued for deletion. Rows stay queued if a delete fails, and are retried later. */
+/** Removed image files are kept this long, so a database snapshot from that time still has its images. */
+export const KEEP_REMOVED_MS = 14 * 86_400_000;
+const retiredDir = (store: Pick<Store, 'backupsDir'>) => path.join(store.backupsDir, 'images');
+
+/** Move an image out of the library into the backup folder (instead of deleting it). */
+function retire(store: Pick<Store, 'backupsDir'>, p: string) {
+  // Previews are cheap to make again; they never need keeping.
+  fs.rmSync(path.join(path.dirname(p), 'thumbs', thumbName(path.basename(p))), { force: true });
+  if (!fs.existsSync(p)) return;
+  const dir = retiredDir(store);
+  fs.mkdirSync(dir, { recursive: true });
+  const dest = path.join(dir, path.basename(p));
+  try {
+    fs.renameSync(p, dest);
+  } catch {
+    fs.copyFileSync(p, dest);
+    fs.rmSync(p, { force: true });
+  }
+  const now = new Date();
+  fs.utimesSync(dest, now, now); // its age counts from removal
+}
+
 export function flushFileDeletes(store: Store) {
   const rows = store.db.prepare('SELECT file FROM pending_file_deletes').all() as { file: string }[];
   const done = store.db.prepare('DELETE FROM pending_file_deletes WHERE file = ?');
@@ -152,7 +193,7 @@ export function flushFileDeletes(store: Store) {
     }
     const p = imagePath(store, file);
     try {
-      if (p) fs.rmSync(p, { force: true });
+      if (p) retire(store, p);
       done.run(file);
     } catch (err) {
       console.warn(`  Couldn’t remove ${file}: ${(err as Error).message}. Will retry.`);
@@ -182,16 +223,36 @@ export function collectGarbage(store: Store, olderThanMs = 3_600_000) {
       queue.run(a.file);
     }
   });
+  const known = new Set((db.prepare('SELECT file FROM assets').all() as { file: string }[]).map((r) => r.file));
+  const retired = retiredDir(store);
+  // A restored snapshot may point at images that were removed since: bring them back.
+  for (const f of known) {
+    const live = imagePath(store, f);
+    const kept = path.join(retired, f);
+    if (live && !fs.existsSync(live) && FILE_NAME.test(f) && fs.existsSync(kept)) {
+      fs.mkdirSync(store.imagesDir, { recursive: true });
+      fs.copyFileSync(kept, live);
+    }
+  }
   if (fs.existsSync(store.imagesDir)) {
-    const known = new Set((db.prepare('SELECT file FROM assets').all() as { file: string }[]).map((r) => r.file));
     for (const f of fs.readdirSync(store.imagesDir)) {
       const p = path.join(store.imagesDir, f);
-      // Stale temp files from an interrupted write, and orphaned images older than the cutoff.
-      const stale = f.endsWith('.tmp') || (FILE_NAME.test(f) && !known.has(f));
-      if (stale && fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { force: true });
+      if (f.endsWith('.tmp')) {
+        // A write interrupted by a crash.
+        if (fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { force: true });
+      } else if (FILE_NAME.test(f) && !known.has(f) && fs.statSync(p).mtimeMs < cutoff) {
+        retire(store, p); // no row knows this image: keep it aside rather than delete it
+      }
     }
   }
   flushFileDeletes(store);
+  // Removed images are only deleted for good after two weeks.
+  if (fs.existsSync(retired)) {
+    for (const f of fs.readdirSync(retired)) {
+      const p = path.join(retired, f);
+      if (Date.now() - fs.statSync(p).mtimeMs > KEEP_REMOVED_MS) fs.rmSync(p, { force: true });
+    }
+  }
 }
 
 export function assetJson(a: AssetRow) {

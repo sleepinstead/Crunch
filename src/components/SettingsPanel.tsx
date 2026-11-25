@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { api, type Stats } from '../api';
 import type { Settings } from '../settings';
 import { PATTERNS, SWATCHES } from './Dock';
 import { FillRow } from './FillRow';
+
+/** The setting row's title, so controls inside it are named for screen readers. */
+const RowTitle = createContext<string | undefined>(undefined);
 
 function Seg<T extends string | number>({
   value,
@@ -15,7 +18,12 @@ function Seg<T extends string | number>({
   onChange: (v: T) => void;
 }) {
   return (
-    <div className="seg compact" role="radiogroup" style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}>
+    <div
+      className="seg compact"
+      role="radiogroup"
+      aria-label={useContext(RowTitle)}
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
+    >
       {options.map((o) => (
         <button
           key={String(o.value)}
@@ -31,9 +39,16 @@ function Seg<T extends string | number>({
   );
 }
 
-function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
+function Toggle({ on, onChange, label, disabled }: { on: boolean; onChange: (v: boolean) => void; label: string; disabled?: boolean }) {
   return (
-    <button role="switch" aria-checked={on} aria-label={label} className={`toggle${on ? ' on' : ''}`} onClick={() => onChange(!on)}>
+    <button
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      disabled={disabled}
+      className={`toggle${on ? ' on' : ''}`}
+      onClick={() => onChange(!on)}
+    >
       <span />
     </button>
   );
@@ -46,7 +61,9 @@ function Row({ title, text, children, stack }: { title: string; text?: string; c
         <div className="set-title">{title}</div>
         {text && <div className="set-text">{text}</div>}
       </div>
-      <div className="set-control">{children}</div>
+      <div className="set-control">
+        <RowTitle.Provider value={title}>{children}</RowTitle.Provider>
+      </div>
     </div>
   );
 }
@@ -262,6 +279,7 @@ function Panel({
                 <Toggle
                   label="Snap to equal spacing"
                   on={s.snapping && s.snapSpacing}
+                  disabled={!s.snapping}
                   onChange={(v) => s.snapping && onChange({ snapSpacing: v })}
                 />
               </span>

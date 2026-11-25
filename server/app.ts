@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Store } from './db.ts';
 import { backupDatabase } from './db.ts';
-import { storeAsset, assetJson, flushFileDeletes, HttpError, type AssetRow } from './assets.ts';
+import { storeAsset, assetJson, flushFileDeletes, HttpError, storeThumb, thumbName, thumbPath, type AssetRow } from './assets.ts';
 import { fetchImage } from './fetch-image.ts';
 import { exportLibrary, importLibrary, saveUpload } from './archive.ts';
 
@@ -111,7 +111,7 @@ interface ItemRow {
   source_url: string | null;
 }
 
-const itemJson = (i: ItemRow) => ({
+const itemJson = (i: ItemRow, hasThumb: (file: string) => boolean) => ({
   id: i.id,
   projectId: i.project_id,
   kind: i.kind === 'text' ? 'text' : 'image',
@@ -132,6 +132,7 @@ const itemJson = (i: ItemRow) => ({
   z: i.z,
   rotation: i.rotation,
   src: i.file ? `/files/${i.file}` : '',
+  thumb: i.file && hasThumb(i.file) ? `/files/thumbs/${thumbName(i.file)}` : null,
   naturalW: i.nw ?? i.w,
   naturalH: i.nh ?? i.h,
   sourceUrl: i.source_url,
@@ -214,7 +215,7 @@ export function createApp(store: Store, opts: AppOptions = {}) {
     untrash: db.prepare('DELETE FROM trash WHERE id = ?'),
     trashRow: db.prepare('SELECT * FROM trash WHERE id = ?'),
     trashTarget: db.prepare('SELECT id, asset_id FROM trash WHERE id = ?'),
-    assetUsed: db.prepare('SELECT 1 FROM items WHERE asset_id = ?1 UNION ALL SELECT 1 FROM trash WHERE asset_id = ?1 LIMIT 1'),
+    assetUsed: db.prepare('SELECT 1 FROM items WHERE asset_id = ? UNION ALL SELECT 1 FROM trash WHERE asset_id = ? LIMIT 1'),
     assetFile: db.prepare('SELECT file FROM assets WHERE id = ?'),
     deleteAsset: db.prepare('DELETE FROM assets WHERE id = ?'),
     queueFile: db.prepare('INSERT OR IGNORE INTO pending_file_deletes (file) VALUES (?)'),
@@ -274,7 +275,7 @@ export function createApp(store: Store, opts: AppOptions = {}) {
     tx(() => {
       for (const t of targets) q.untrash.run(t.id);
       for (const assetId of new Set(targets.map((t) => t.asset_id).filter((a): a is string => !!a))) {
-        if (q.assetUsed.get(assetId)) continue;
+        if (q.assetUsed.get(assetId, assetId)) continue;
         const a = q.assetFile.get(assetId) as { file: string } | undefined;
         q.deleteAsset.run(assetId);
         if (a) {
@@ -499,7 +500,7 @@ export function createApp(store: Store, opts: AppOptions = {}) {
 
   api.get('/projects/:id/items', (req, res) => {
     const rows = q.items.all(id(req.params.id)) as unknown as ItemRow[];
-    res.json(rows.map(itemJson));
+    res.json(rows.map((r) => itemJson(r, (file) => fs.existsSync(thumbPath(store, file)))));
   });
 
   // Upsert layers (move, resize, reorder, create, undo).
@@ -592,6 +593,15 @@ export function createApp(store: Store, opts: AppOptions = {}) {
   });
 
   /* ---------- images ---------- */
+
+  // A small preview of an image, made by the browser, used at low zoom.
+  api.put('/assets/:id/thumb', express.raw({ type: () => true, limit: '2mb' }), (req, res) => {
+    const a = q.asset.get(id(req.params.id)) as AssetRow | undefined;
+    if (!a) throw new HttpError(404, 'Image not found.');
+    if (!Buffer.isBuffer(req.body)) throw new HttpError(400, 'No preview data.');
+    storeThumb(store, a.file, req.body);
+    res.json({ thumb: `/files/thumbs/${thumbName(a.file)}` });
+  });
 
   api.get('/assets/:id', (req, res) => {
     const a = q.asset.get(id(req.params.id)) as AssetRow | undefined;

@@ -2,6 +2,38 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 
 /* ---------- dismiss helpers ---------- */
 
+/**
+ * Escape closes only the topmost open layer (a colour picker inside a popover inside
+ * a panel closes just the picker). Layers register in mount order; one window listener,
+ * installed before any component's, hands Escape to the newest and stops it there.
+ */
+const escapeStack: { current: () => void }[] = [];
+if (typeof window !== 'undefined') {
+  window.addEventListener(
+    'keydown',
+    (e) => {
+      if (e.key !== 'Escape' || !escapeStack.length) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      escapeStack[escapeStack.length - 1].current();
+    },
+    true,
+  );
+}
+
+export function useEscapeLayer(onEscape: () => void, active = true) {
+  const handler = useRef(onEscape);
+  handler.current = onEscape;
+  useEffect(() => {
+    if (!active) return;
+    escapeStack.push(handler);
+    return () => {
+      const i = escapeStack.lastIndexOf(handler);
+      if (i >= 0) escapeStack.splice(i, 1);
+    };
+  }, [active]);
+}
+
 function useDismiss(
   ref: React.RefObject<HTMLElement | null>,
   onClose: () => void,
@@ -14,21 +46,14 @@ function useDismiss(
       if (ref.current?.contains(t) || ignore?.current?.contains(t)) return;
       onClose();
     };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
     window.addEventListener('pointerdown', down, true);
-    window.addEventListener('keydown', key, true);
     if (closeOnBlur) window.addEventListener('blur', onClose);
     return () => {
       window.removeEventListener('pointerdown', down, true);
-      window.removeEventListener('keydown', key, true);
       window.removeEventListener('blur', onClose);
     };
   }, [ref, ignore, onClose, closeOnBlur]);
+  useEscapeLayer(onClose);
 }
 
 /** Keep a fixed-position element inside the viewport. */
@@ -211,11 +236,7 @@ export function Dialog({
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   useFocusTrap(ref);
-  useEffect(() => {
-    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', key);
-    return () => window.removeEventListener('keydown', key);
-  }, [onClose]);
+  useEscapeLayer(onClose);
   useEffect(() => {
     const title = ref.current?.querySelector('.dialog-title');
     if (title && !title.id) title.id = titleId;

@@ -66,7 +66,7 @@ Everything is saved in the `data` folder inside the project:
 
 - `crunch.db` holds your boards, layers and settings.
 - `images/` holds the image files themselves. The same image added twice is only stored once.
-- `backups/` keeps a daily copy of the database for the last two weeks.
+- `backups/` keeps a daily copy of the database, plus any image you delete for good, for two weeks.
 
 To move your library, use **Settings › Library › Export**, then **Import** on the other machine. Importing adds
 boards next to the ones you already have and never overwrites anything.

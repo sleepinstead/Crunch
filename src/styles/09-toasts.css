@@ -1,0 +1,40 @@
+/* ---------- toasts ---------- */
+
+.toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 74px;
+  transform: translateX(-50%);
+  z-index: 500; /* above the landing page and the tour, so errors are never hidden */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.toasts > div {
+  display: contents;
+}
+.toast {
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #171717;
+  color: #fafafa;
+  font-weight: 500;
+  box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.3);
+}
+[data-tone='dark'] .toast {
+  background: #f2f2f1;
+  color: #171717;
+}
+.toast.error::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 8px 1px 0;
+  border-radius: 50%;
+  background: #f87171;
+  vertical-align: middle;
+}

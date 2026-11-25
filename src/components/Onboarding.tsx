@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { useFocusTrap } from './ui';
+import { useEscapeLayer, useFocusTrap } from './ui';
 import { Poster } from '../landing/Posters';
 import './onboarding.css';
 
@@ -185,16 +185,12 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
   };
 
   useFocusTrap(card);
+  useEscapeLayer(() => close());
   const closeTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        close();
-        return;
-      }
       // Arrows page through the tour; Enter and Space stay with whichever button has focus.
       const onButton = (e.target as HTMLElement | null)?.closest('button');
       if (e.key === 'ArrowRight' || (e.key === 'Enter' && !onButton)) {

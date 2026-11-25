@@ -1,0 +1,25 @@
+/* ---------- snapping guides ---------- */
+
+.snap-lines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 4;
+}
+.snap-lines line {
+  stroke: #f24822;
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.snap-lines .gap line {
+  stroke: #ff24bd;
+}
+.snap-lines .gap rect {
+  fill: #ff24bd;
+}
+.snap-lines .gap text {
+  fill: #fff;
+  font: 600 10px var(--font);
+  text-anchor: middle;
+}

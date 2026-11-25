@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -7,7 +7,6 @@ import {
   CopyPlus,
   ExternalLink,
   Image as ImageIcon,
-  ImageOff,
   Link2,
   Maximize,
   RotateCcw,
@@ -36,376 +35,33 @@ import {
   type Rect,
 } from '../geometry';
 import { Sidebar } from './Sidebar';
-import { GAP_PX, SIZE_SCALE, TEXT_SIZE_PX, reducedMotion, type Settings } from '../settings';
+import { makeThumbs, THUMB_SIDE } from '../thumbs';
+import { GAP_PX, SIZE_SCALE, TEXT_SIZE_PX } from '../settings';
 import { Menu, UrlDialog, type MenuEntry } from './ui';
+import type { CanvasApi, Change, Entry, Corner, Mode, Props } from './canvas/types';
+import { useLayerSync } from './canvas/useLayerSync';
+import { useViewport } from './canvas/useViewport';
+import {
+  TAB_DRAG_TYPE,
+  clampZoom,
+  uid,
+  IS_MAC,
+  MOD,
+  DOCK_SPACE,
+  isEditable,
+  modalOpen,
+  inPanel,
+  onControl,
+  RAD,
+  historyFor,
+} from './canvas/constants';
+import { hitsRect, normDeg, layout, avoidOverlap } from './canvas/layout';
+import { backgroundStyle } from './canvas/background';
+import { ItemView } from './canvas/ItemView';
+import { TextView } from './canvas/TextView';
 
-export interface CanvasApi {
-  zoom: number;
-  textTool: boolean;
-  setTextTool: (on: boolean) => void;
-  zoomBy: (factor: number) => void;
-  zoomTo: (zoom: number) => void;
-  zoomToFit: () => void;
-}
-
-type Change = Record<string, Item | null>;
-interface Entry {
-  before: Change;
-  after: Change;
-}
-type Corner = 'nw' | 'ne' | 'sw' | 'se';
-
-type Mode =
-  | {
-      type: 'pan';
-      sx: number;
-      sy: number;
-      vx: number;
-      vy: number;
-      started: boolean;
-    }
-  | {
-      type: 'move';
-      sx: number;
-      sy: number;
-      wx: number;
-      wy: number;
-      origIds: string[];
-      ids: string[];
-      base: Record<string, Item>;
-      before: Change;
-      moved: boolean;
-      alt: boolean;
-      reduceTo: string[] | null;
-    }
-  | {
-      type: 'resize';
-      id: string;
-      before: Item;
-      ax: number;
-      ay: number;
-      dirX: number;
-      dirY: number;
-      ratio: number;
-    }
-  | {
-      type: 'rotate';
-      id: string;
-      cx: number;
-      cy: number;
-      start: number;
-      before: Item;
-    }
-  | {
-      type: 'groupResize';
-      ax: number;
-      ay: number;
-      dirX: number;
-      dirY: number;
-      bw: number;
-      bh: number;
-      base: Record<string, Item>;
-    }
-  | { type: 'marquee'; wx: number; wy: number; base: Set<string> };
-
-interface Props {
-  project: Project;
-  onViewSaved: (view: View) => void;
-  toast: (text: string, tone?: 'info' | 'error') => void;
-  chrome: (api: CanvasApi, interacting: boolean) => ReactNode;
-  settings: Settings;
-  /** Bumped by the parent when items changed elsewhere (e.g. restored from Recently deleted). */
-  reloadSignal?: number;
-}
-
-export const TAB_DRAG_TYPE = 'application/x-crunch-tab';
-const MIN_ZOOM = 0.03;
-const MAX_ZOOM = 10;
-const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
-const uid = (): string => crypto.randomUUID();
-const IS_MAC = /Mac|iPhone|iPad/.test(navigator.userAgent);
-const MOD = IS_MAC ? '⌘' : 'Ctrl ';
-const DOCK_SPACE = 88;
-
-const isEditable = (t: EventTarget | null) =>
-  t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
-// A dialog or the landing page is on top: the canvas ignores keys and paste.
-const modalOpen = () => !!document.querySelector('.scrim, .landing');
-/** Focus is inside settings, a popover or a menu: canvas shortcuts stay out of the way. */
-const inPanel = (t: EventTarget | null) => t instanceof Element && !!t.closest('.settings, .popover, .menu');
-const onControl = (t: EventTarget | null) =>
-  t instanceof Element && !!t.closest('button, a, [role="tab"], [role="switch"], [role="radio"]');
-
-const RAD = Math.PI / 180;
-
-/** Undo history per project, kept for the whole session (survives switching tabs). */
-const histories = new Map<string, { undo: Entry[]; redo: Entry[] }>();
-const historyFor = (id: string) => {
-  let h = histories.get(id);
-  if (!h) histories.set(id, (h = { undo: [], redo: [] }));
-  return h;
-};
-
-/** Axis-aligned box around a (possibly rotated) item. */
-/** Does the (possibly rotated) item actually overlap an axis-aligned rect? */
-function hitsRect(i: Item, r: Rect): boolean {
-  const a = aabb(i);
-  if (!(a.x < r.x + r.w && a.x + a.w > r.x && a.y < r.y + r.h && a.y + a.h > r.y)) return false;
-  if (!i.rotation) return true;
-  // Separating-axis test on the item's own two axes (the rect's axes were covered above).
-  const t = i.rotation * RAD;
-  const cx = i.x + i.w / 2;
-  const cy = i.y + i.h / 2;
-  const ux = [Math.cos(t), Math.sin(t)];
-  const uy = [-Math.sin(t), Math.cos(t)];
-  const pts = [
-    [r.x, r.y],
-    [r.x + r.w, r.y],
-    [r.x + r.w, r.y + r.h],
-    [r.x, r.y + r.h],
-  ];
-  for (const [ax, half] of [
-    [ux, i.w / 2],
-    [uy, i.h / 2],
-  ] as const) {
-    const c = cx * ax[0] + cy * ax[1];
-    const proj = pts.map(([x, y]) => x * ax[0] + y * ax[1]);
-    if (Math.max(...proj) < c - half || Math.min(...proj) > c + half) return false;
-  }
-  return true;
-}
-
-const normDeg = (d: number) => {
-  const n = ((((d + 180) % 360) + 360) % 360) - 180;
-  return Math.abs(n) < 1e-6 ? 0 : n;
-};
-
-/** Lay new images out in tidy rows of equal height, centered on a point. */
-function layout(assets: Asset[], center: { x: number; y: number }, zoom: number, gapPx = 20, scale = 1) {
-  const single = assets.length === 1;
-  const rowH = ((single ? 420 : 300) * scale) / zoom;
-  const maxW = ((single ? 560 : 520) * scale) / zoom;
-  const gap = gapPx / zoom;
-  const sizes = assets.map((a) => {
-    const s = Math.min(1, rowH / a.height, maxW / a.width);
-    return { w: a.width * s, h: a.height * s };
-  });
-  const rowLimit = Math.max(maxW, Math.min(assets.length, Math.ceil(Math.sqrt(assets.length * 1.4))) * (rowH * 1.1 + gap));
-  const rows: number[][] = [[]];
-  let rowW = 0;
-  sizes.forEach((s, i) => {
-    const row = rows[rows.length - 1];
-    if (row.length && rowW + gap + s.w > rowLimit) {
-      rows.push([i]);
-      rowW = s.w;
-    } else {
-      row.push(i);
-      rowW += (row.length > 1 ? gap : 0) + s.w;
-    }
-  });
-  const rowHeights = rows.map((r) => Math.max(...r.map((i) => sizes[i].h)));
-  const totalH = rowHeights.reduce((a, b) => a + b, 0) + gap * (rows.length - 1);
-  const out: Rect[] = [];
-  let y = center.y - totalH / 2;
-  rows.forEach((r, ri) => {
-    const width = r.reduce((a, i) => a + sizes[i].w, 0) + gap * (r.length - 1);
-    let x = center.x - width / 2;
-    for (const i of r) {
-      out[i] = {
-        x,
-        y: y + (rowHeights[ri] - sizes[i].h) / 2,
-        w: sizes[i].w,
-        h: sizes[i].h,
-      };
-      x += sizes[i].w + gap;
-    }
-    y += rowHeights[ri] + gap;
-  });
-  return out;
-}
-
-/** Shift a block of rects to the nearest spot (spiraling outward) where it covers nothing. */
-function avoidOverlap(rects: Rect[], existing: Rect[], zoom: number, gapPx = 20): Rect[] {
-  const block = boundsOf(rects);
-  if (!block || !existing.length) return rects;
-  const gap = gapPx / zoom;
-  const hits = (dx: number, dy: number) =>
-    existing.some(
-      (e) =>
-        block.x + dx < e.x + e.w + gap &&
-        block.x + dx + block.w + gap > e.x &&
-        block.y + dy < e.y + e.h + gap &&
-        block.y + dy + block.h + gap > e.y,
-    );
-  if (!hits(0, 0)) return rects;
-  const step = Math.max(40 / zoom, Math.min(block.w, block.h) / 4);
-  for (let ring = 1; ring < 60; ring++) {
-    const n = ring * 8;
-    let best: { dx: number; dy: number } | null = null;
-    for (let k = 0; k < n; k++) {
-      const a = (k / n) * Math.PI * 2;
-      const dx = Math.cos(a) * ring * step;
-      const dy = Math.sin(a) * ring * step;
-      if (!hits(dx, dy) && (!best || Math.abs(dy) < Math.abs(best.dy))) best = { dx, dy };
-    }
-    if (best) return rects.map((r) => ({ ...r, x: r.x + best.dx, y: r.y + best.dy }));
-  }
-  return rects;
-}
-
-/**
- * Background pattern in screen space: spacing and dot size never change with
- * zoom (only images scale), but it follows the canvas when you pan.
- */
-function backgroundStyle(project: Project, v: { x: number; y: number }): CSSProperties {
-  const style: CSSProperties = { backgroundColor: project.bgColor };
-  if (project.pattern === 'plain') return style;
-  const dark = isDark(project.bgColor);
-  const density = project.density || 1;
-  const rgb = dark ? '255,255,255' : '0,0,0';
-  const scale = Math.pow(density, 0.8);
-
-  if (project.pattern === 'dots') {
-    const step = 22 / scale;
-    const r = 1.1 * Math.min(1, Math.pow(density, -0.3));
-    style.backgroundImage = `radial-gradient(circle at ${step / 2}px ${step / 2}px, rgba(${rgb},0.17) ${r}px, transparent ${r + 0.7}px)`;
-    style.backgroundSize = `${step}px ${step}px`;
-    style.backgroundPosition = `${v.x - step / 2}px ${v.y - step / 2}px`;
-  } else {
-    const step = 32 / scale;
-    const a = dark ? 0.07 : 0.065;
-    style.backgroundImage = `linear-gradient(to right, rgba(${rgb},${a}) 1px, transparent 1px), linear-gradient(to bottom, rgba(${rgb},${a}) 1px, transparent 1px)`;
-    style.backgroundSize = `${step}px ${step}px`;
-    style.backgroundPosition = `${v.x}px ${v.y}px`;
-  }
-  return style;
-}
-
-const ItemView = memo(function ItemView({ item }: { item: Item }) {
-  const [broken, setBroken] = useState(false);
-  return (
-    <div
-      className={`item${item.locked ? ' locked' : ''}`}
-      data-item-id={item.id}
-      style={{
-        transform: `translate(${item.x}px, ${item.y}px)${item.rotation ? ` rotate(${item.rotation}deg)` : ''}`,
-        width: item.w,
-        height: item.h,
-        opacity: item.opacity ?? 1,
-      }}
-    >
-      {broken ? (
-        <div className="item-broken" title="The browser can’t display this file. It is still saved in your library.">
-          <ImageOff />
-          <span>Can’t display this image</span>
-        </div>
-      ) : (
-        <img src={item.src} alt="" draggable={false} decoding="async" onError={() => setBroken(true)} />
-      )}
-    </div>
-  );
-});
-
-const PLAINTEXT_OK = (() => {
-  const d = document.createElement('div');
-  try {
-    d.contentEditable = 'plaintext-only';
-  } catch {
-    return false;
-  }
-  return d.contentEditable === 'plaintext-only';
-})();
-
-/** A text item. Sizes itself to its content and reports that size back. */
-const TextView = memo(function TextView({
-  item,
-  editing,
-  dark,
-  onMeasure,
-  onDone,
-}: {
-  item: Item;
-  editing: boolean;
-  dark: boolean;
-  onMeasure: (id: string, w: number, h: number) => void;
-  onDone: (id: string, text: string) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  const measure = () => {
-    const el = ref.current;
-    if (!el) return;
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    if (Math.abs(w - item.w) > 0.5 || Math.abs(h - item.h) > 0.5) onMeasure(item.id, w, h);
-  };
-  useLayoutEffect(measure);
-  useEffect(() => {
-    // Fonts can finish loading after first paint.
-    document.fonts?.ready.then(measure);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!editing || !el) return;
-    el.innerText = item.text ?? '';
-    el.focus();
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    const sel = window.getSelection();
-    sel?.removeAllRanges();
-    sel?.addRange(range);
-    measure();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing]);
-
-  return (
-    <div
-      className={`item text${editing ? ' editing' : ''}${item.locked ? ' locked' : ''}`}
-      data-item-id={item.id}
-      style={{
-        transform: `translate(${item.x}px, ${item.y}px)${item.rotation ? ` rotate(${item.rotation}deg)` : ''}`,
-        fontSize: item.fontSize ?? 24,
-        fontWeight: item.fontWeight ?? 500,
-        opacity: item.opacity ?? 1,
-        color: item.color ?? (dark ? '#EDEDEC' : '#191919'),
-      }}
-    >
-      <div
-        ref={ref}
-        className="text-body"
-        contentEditable={editing ? (PLAINTEXT_OK ? 'plaintext-only' : true) : false}
-        onPaste={(e) => {
-          if (PLAINTEXT_OK) return;
-          // Keep pasted text plain where the browser can't enforce it.
-          e.preventDefault();
-          document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
-        }}
-        suppressContentEditableWarning
-        spellCheck={editing}
-        onInput={measure}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            // Leave editing but keep the text selected (Figma); don't let the canvas clear it.
-            e.preventDefault();
-            e.stopPropagation();
-            e.currentTarget.blur();
-          }
-        }}
-        onBlur={(e) => {
-          if (!editing) return;
-          const text = e.currentTarget.innerText;
-          // Hand the DOM back to React before it re-renders the committed text.
-          e.currentTarget.textContent = '';
-          onDone(item.id, text);
-        }}
-      >
-        {editing ? null : item.text}
-      </div>
-    </div>
-  );
-});
+export type { CanvasApi } from './canvas/types';
+export { TAB_DRAG_TYPE } from './canvas/constants';
 
 export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSignal }: Props) {
   const settingsRef = useRef(settings);
@@ -517,146 +173,18 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
 
   /* ---------- viewport ---------- */
 
-  const saveView = useCallback(
-    (v: View) => {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        saveTimer.current = undefined;
-        api.updateProject(project.id, { view: v }).catch(() => {});
-        onViewSaved(v);
-      }, 350);
-    },
-    [project.id, onViewSaved],
-  );
-
-  const setView = useCallback(
-    (v: View) => {
-      const prev = viewRef.current;
-      if (v.zoom === prev.zoom) {
-        const dx = v.x - prev.x;
-        const dy = v.y - prev.y;
-        if (dx || dy) setBgOffset((o) => ({ x: o.x + dx, y: o.y + dy }));
-      }
-      viewRef.current = v;
-      setViewState(v);
-      saveView(v);
-    },
-    [saveView],
-  );
-
-  // Flush the viewport when switching projects.
-  useEffect(
-    () => () => {
-      if (saveTimer.current !== undefined) {
-        window.clearTimeout(saveTimer.current);
-        api.updateProject(project.id, { view: viewRef.current }).catch(() => {});
-        onViewSaved(viewRef.current);
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  const size = () => {
-    const r = rootRef.current?.getBoundingClientRect() ?? {
-      width: window.innerWidth,
-      height: window.innerHeight,
-      left: 0,
-      top: 0,
-    };
-    return { w: r.width, h: r.height, left: r.left, top: r.top };
-  };
-
-  const toWorld = useCallback((cx: number, cy: number) => {
-    const v = viewRef.current;
-    const r = rootRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 };
-    return { x: (cx - r.left - v.x) / v.zoom, y: (cy - r.top - v.y) / v.zoom };
-  }, []);
-
-  const zoomAt = useCallback(
-    (sx: number, sy: number, zoom: number) => {
-      const v = viewRef.current;
-      const z = clampZoom(zoom);
-      const wx = (sx - v.x) / v.zoom;
-      const wy = (sy - v.y) / v.zoom;
-      setView({ zoom: z, x: sx - wx * z, y: sy - wy * z });
-    },
-    [setView],
-  );
-
-  const animateTo = useCallback(
-    (target: View) => {
-      if (anim.current) cancelAnimationFrame(anim.current);
-      const { w, h } = size();
-      const from = viewRef.current;
-      const c0 = {
-        x: (w / 2 - from.x) / from.zoom,
-        y: (h / 2 - from.y) / from.zoom,
-      };
-      const c1 = {
-        x: (w / 2 - target.x) / target.zoom,
-        y: (h / 2 - target.y) / target.zoom,
-      };
-      const start = performance.now();
-      const dur = reducedMotion() ? 0 : 320;
-      const step = (now: number) => {
-        const t = dur ? Math.min(1, (now - start) / dur) : 1;
-        const e = 1 - Math.pow(1 - t, 3);
-        const z = from.zoom * Math.pow(target.zoom / from.zoom, e);
-        const cx = c0.x + (c1.x - c0.x) * e;
-        const cy = c0.y + (c1.y - c0.y) * e;
-        setView({ zoom: z, x: w / 2 - cx * z, y: h / 2 - cy * z });
-        if (t < 1) anim.current = requestAnimationFrame(step);
-      };
-      anim.current = requestAnimationFrame(step);
-    },
-    [setView],
-  );
-
-  const fitRect = useCallback(
-    (b: Rect, maxZoom: number) => {
-      const { w, h } = size();
-      const pad = 64;
-      const zoom = clampZoom(Math.min((w - pad * 2) / b.w, (h - pad * 2 - DOCK_SPACE) / b.h, maxZoom));
-      animateTo({
-        zoom,
-        x: w / 2 - (b.x + b.w / 2) * zoom,
-        y: (h - DOCK_SPACE) / 2 - (b.y + b.h / 2) * zoom,
-      });
-    },
-    [animateTo],
-  );
-
-  const zoomToFit = useCallback(() => {
-    const sel = [...selRef.current].map((id) => itemsRef.current[id]).filter(Boolean);
-    const b = boundsOf(sel.length ? sel : Object.values(itemsRef.current));
-    if (b) fitRect(b, 1);
-    else {
-      const { w, h } = size();
-      animateTo({ zoom: 1, x: w / 2, y: h / 2 });
-    }
-  }, [fitRect, animateTo]);
-
-  const zoomBy = useCallback(
-    (f: number) => {
-      const { w, h } = size();
-      const v = viewRef.current;
-      const z = clampZoom(v.zoom * f);
-      const wx = (w / 2 - v.x) / v.zoom;
-      const wy = (h / 2 - v.y) / v.zoom;
-      animateTo({ zoom: z, x: w / 2 - wx * z, y: h / 2 - wy * z });
-    },
-    [animateTo],
-  );
-
-  /** Zoom to 100% returns to where the canvas started: origin centered on screen. */
-  const zoomTo = useCallback(
-    (zoom: number) => {
-      const { w, h } = size();
-      animateTo({ zoom: clampZoom(zoom), x: w / 2, y: (h - DOCK_SPACE) / 2 });
-    },
-    [animateTo],
-  );
+  const { saveView, setView, size, toWorld, zoomAt, animateTo, fitRect, zoomToFit, zoomBy, zoomTo } = useViewport({
+    projectId: project.id,
+    onViewSaved,
+    rootRef,
+    viewRef,
+    setViewState,
+    setBgOffset,
+    saveTimer,
+    anim,
+    itemsRef,
+    selRef,
+  });
 
   /* ---------- load ---------- */
 
@@ -700,128 +228,20 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
 
   /* ---------- changes, persistence, history ---------- */
 
-  /** Unsent changes, latest per layer. Sent in order through `queue`. */
-  const outbox = useRef<Change>({});
-  const alive = useRef(true);
-  useEffect(
-    () => () => {
-      alive.current = false;
-    },
-    [],
-  );
-
-  const splitChange = (change: Change) => ({
-    ups: Object.values(change).filter((i): i is Item => !!i),
-    dels: Object.keys(change).filter((id) => !change[id]),
+  const { persist, resync } = useLayerSync({
+    projectId: project.id,
+    reloadSignal,
+    toast,
+    itemsRef,
+    setItems,
+    newTextId,
+    measureSave,
+    saveTimer,
+    viewRef,
+    mode,
+    hist,
+    queue,
   });
-
-  // After a failed save, reload from the server (once every queued write has finished),
-  // so the screen never shows unsaved state. A text box still being typed survives.
-  const resync = useCallback(() => {
-    queue.current = queue.current
-      .then(() => api.listItems(project.id))
-      .then((list) => {
-        if (!alive.current) return;
-        const next = Object.fromEntries(list.map((i) => [i.id, i]));
-        const editingNew = newTextId.current && itemsRef.current[newTextId.current];
-        if (editingNew) next[editingNew.id] = editingNew;
-        setItems(next);
-      })
-      .catch(() => {});
-  }, [project.id]);
-
-  useEffect(() => {
-    if (!reloadSignal) return;
-    // Layers came back from Recently deleted: old undo steps may describe a state that no longer exists.
-    hist.undo.length = 0;
-    hist.redo.length = 0;
-    resync();
-  }, [reloadSignal, resync, hist]);
-
-  const sendOutbox = useCallback(async () => {
-    const change = outbox.current;
-    outbox.current = {};
-    const { ups, dels } = splitChange(change);
-    if (ups.length) await api.upsertItems(ups);
-    if (dels.length) await api.deleteItems(dels);
-  }, []);
-
-  // Other tabs on the same board reload after this one saves (and vice versa).
-  // The channel is opened by the effect itself, so React's mount/unmount/remount in
-  // development never leaves a closed channel behind.
-  const channel = useRef<BroadcastChannel | null>(null);
-  const tabId = useMemo(() => Math.random().toString(36).slice(2), []);
-  useEffect(() => {
-    if (!('BroadcastChannel' in window)) return;
-    const ch = new BroadcastChannel('crunch');
-    channel.current = ch;
-    ch.onmessage = (e) => {
-      const msg = e.data as { project?: string; from?: string };
-      if (msg.project === project.id && msg.from !== tabId && !mode.current && !Object.keys(outbox.current).length) resync();
-    };
-    return () => {
-      if (channel.current === ch) channel.current = null;
-      ch.close();
-    };
-  }, [project.id, resync, tabId]);
-  // Telling other tabs is best-effort: it must never turn a successful save into an error.
-  const announce = useCallback(() => {
-    try {
-      channel.current?.postMessage({ project: project.id, from: tabId });
-    } catch {
-      /* channel closed: nothing to tell */
-    }
-  }, [project.id, tabId]);
-
-  // Closing or hiding the tab: send everything still waiting, in a way that survives the page going away.
-  useEffect(() => {
-    const flush = () => {
-      for (const [id, t] of measureSave.current) {
-        window.clearTimeout(t);
-        const cur = itemsRef.current[id];
-        if (cur) outbox.current[id] = cur;
-      }
-      measureSave.current.clear();
-      const typing = newTextId.current ? itemsRef.current[newTextId.current] : null;
-      if (typing && typing.text?.trim()) outbox.current[typing.id] = typing;
-      const { ups, dels } = splitChange(outbox.current);
-      outbox.current = {};
-      if (ups.length) api.upsertItems(ups, true).catch(() => {});
-      if (dels.length) api.deleteItems(dels, true).catch(() => {});
-      if (saveTimer.current !== undefined) {
-        window.clearTimeout(saveTimer.current);
-        saveTimer.current = undefined;
-        api.updateProject(project.id, { view: viewRef.current }, true).catch(() => {});
-      }
-    };
-    const onHide = () => document.visibilityState === 'hidden' && flush();
-    window.addEventListener('pagehide', flush);
-    document.addEventListener('visibilitychange', onHide);
-    return () => {
-      window.removeEventListener('pagehide', flush);
-      document.removeEventListener('visibilitychange', onHide);
-    };
-  }, [project.id]);
-
-  const persist = useCallback(
-    (change: Change) => {
-      const valid = Object.values(change).every((i) => !i || [i.x, i.y, i.w, i.h, i.z, i.rotation ?? 0].every(Number.isFinite));
-      if (!valid) {
-        toast('Couldn’t save: a layer had an invalid size or position.', 'error');
-        resync();
-        return;
-      }
-      Object.assign(outbox.current, change);
-      queue.current = queue.current
-        .then(sendOutbox)
-        .then(announce)
-        .catch((err: Error) => {
-          toast(`Couldn’t save: ${err.message}`, 'error');
-          resync();
-        });
-    },
-    [toast, resync, sendOutbox, announce],
-  );
 
   const apply = useCallback(
     (change: Change) => {
@@ -1944,6 +1364,39 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   /* ---------- render ---------- */
 
   const sorted = useMemo(() => Object.values(items).sort((a, b) => a.z - b.z), [items]);
+  // Only what is on screen (plus a margin) is drawn; selected and edited layers always are.
+  const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setViewport({ w: e.contentRect.width, h: e.contentRect.height }));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const dpr = window.devicePixelRatio || 1;
+  const visible = useMemo(() => {
+    if (sorted.length < 60) return sorted; // small boards: not worth the bookkeeping
+    const mx = viewport.w / view.zoom / 2;
+    const my = viewport.h / view.zoom / 2;
+    const left = -view.x / view.zoom - mx;
+    const top = -view.y / view.zoom - my;
+    const right = left + viewport.w / view.zoom + mx * 2;
+    const bottom = top + viewport.h / view.zoom + my * 2;
+    return sorted.filter((it) => {
+      if (selection.has(it.id) || it.id === editingId) return true;
+      const b = aabb(it);
+      return b.x < right && b.x + b.w > left && b.y < bottom && b.y + b.h > top;
+    });
+  }, [sorted, view, viewport, selection, editingId]);
+  // Make previews for big images in the background.
+  useEffect(() => {
+    makeThumbs(sorted, (assetId, thumb) =>
+      setItems(
+        Object.fromEntries(Object.entries(itemsRef.current).map(([id, it]) => [id, it.assetId === assetId ? { ...it, thumb } : it])),
+      ),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sorted.length]);
   const selected = sorted.filter((i) => selection.has(i.id));
   const empty = loaded && sorted.length === 0 && pending.length === 0;
   const dark = isDark(project.bgColor);
@@ -2153,11 +1606,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
             ['--zoom' as string]: view.zoom,
           }}
         >
-          {sorted.map((it) =>
+          {visible.map((it) =>
             it.hidden ? null : it.kind === 'text' ? (
               <TextView key={it.id} item={it} editing={editingId === it.id} dark={dark} onMeasure={onMeasure} onDone={finishEdit} />
             ) : (
-              <ItemView key={it.id} item={it} />
+              <ItemView key={it.id} item={it} small={it.w * view.zoom * dpr <= THUMB_SIDE} />
             ),
           )}
           {pending.map((p) => (

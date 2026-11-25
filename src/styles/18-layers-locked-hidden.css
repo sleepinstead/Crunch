@@ -1,0 +1,5 @@
+/* ---------- layers: locked / hidden ---------- */
+
+.item.locked {
+  pointer-events: none;
+}

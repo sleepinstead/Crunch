@@ -1,0 +1,41 @@
+/* ---------- design panel layout fixes ---------- */
+
+.design section {
+  padding: 12px 10px 14px;
+}
+.grid2 {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.num {
+  min-width: 0;
+}
+.num input {
+  width: 0; /* let flex size it instead of the input's intrinsic width */
+}
+.num-label {
+  display: grid;
+  place-items: center start;
+  min-width: 28px;
+  padding: 0 2px 0 9px;
+}
+.num-label svg {
+  width: 13px;
+  height: 13px;
+}
+.num-suffix {
+  padding-right: 9px;
+}
+.align-row {
+  justify-content: space-between;
+}
+.align-row .icon-btn svg {
+  width: 15px;
+  height: 15px;
+}
+.action-grid {
+  gap: 2px 6px;
+}
+.act {
+  justify-content: flex-start;
+  min-width: 0;
+}

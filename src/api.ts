@@ -49,6 +49,8 @@ export interface Item {
   z: number;
   rotation: number; // degrees, around the center
   src: string;
+  /** A small preview used when the image is drawn small; null until one is made. */
+  thumb?: string | null;
   naturalW: number;
   naturalH: number;
   sourceUrl: string | null;
@@ -154,6 +156,8 @@ export const api = {
   uploadAsset: (blob: Blob, sourceUrl?: string) =>
     req<Asset>('POST', '/api/assets/upload', blob, sourceUrl ? { 'X-Source-Url': encodeURIComponent(sourceUrl) } : {}),
   assetFromUrl: (url: string) => req<Asset>('POST', '/api/assets/url', { url }),
+
+  uploadThumb: (assetId: string, blob: Blob) => req<{ thumb: string }>('PUT', `/api/assets/${assetId}/thumb`, blob),
 
   /** The whole library as a `.crunch` file (the browser downloads it). */
   exportUrl: '/api/export',

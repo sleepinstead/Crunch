@@ -1,0 +1,51 @@
+/* ---------- narrow screens ---------- */
+
+@media (max-width: 640px) {
+  /* The dock takes the bottom row; the sidebar button sits above it, never on top of it. */
+  .side-toggle {
+    bottom: 76px;
+    left: 12px;
+  }
+  .dock-wrap {
+    bottom: 12px;
+    max-width: calc(100vw - 24px);
+  }
+  /* Panels become full-width sheets with a little margin. */
+  .settings,
+  .sidebar {
+    top: 8px;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+  .brand {
+    top: 10px;
+    left: 10px;
+  }
+  .ob {
+    border-radius: 16px;
+  }
+  .ob-art {
+    height: 180px;
+  }
+}
+/* Bigger hit targets where fingers are the pointer (WCAG 2.5.8). */
+@media (pointer: coarse) {
+  .layer-act,
+  .swatch.small {
+    min-width: 28px;
+    min-height: 28px;
+  }
+  .toggle {
+    height: 24px;
+    width: 40px;
+  }
+  .toggle span {
+    width: 20px;
+    height: 20px;
+  }
+  .toggle.on span {
+    transform: translateX(16px);
+  }
+}

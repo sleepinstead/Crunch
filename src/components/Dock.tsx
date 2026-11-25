@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Grid3x3, Grip, Keyboard, Settings2, Archive, Type, Maximize, Minus, Pencil, Plus, Search, Square, Trash2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Grid3x3, Grip, Keyboard, Settings2, Archive, Type, Maximize, Minus, Pencil, Plus, Search, Square, Trash2 } from 'lucide-react';
 import type { Pattern, Project } from '../api';
 import { TAB_DRAG_TYPE, type CanvasApi } from './Canvas';
 import { Menu, Popover } from './ui';
@@ -101,6 +101,18 @@ export function Dock(p: Props) {
     p.onReorder(ids);
   };
 
+  /** Move a board one place left or right (menu, keyboard). */
+  const shift = (id: string, by: -1 | 1) => {
+    const ids = p.projects.map((x) => x.id);
+    const i = ids.indexOf(id);
+    const j = i + by;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    p.onReorder(ids);
+    requestAnimationFrame(() => tabsRef.current?.querySelector<HTMLElement>(`[data-tab="${id}"]`)?.focus());
+  };
+  const longPress = useRef<number | undefined>(undefined);
+
   const zoomPct = Math.round(p.canvas.zoom * 100);
 
   return (
@@ -128,11 +140,42 @@ export function Dock(p: Props) {
                   .join(' ')}
                 draggable={!editing}
                 onClick={() => p.onSelect(proj.id)}
+                // Keyboard: Enter/Space open, ←/→ move focus, ⌥←/⌥→ reorder, F2 rename,
+                // Delete asks to delete, Shift+F10 or the Menu key opens the menu.
                 onKeyDown={(e) => {
-                  if (editing || (e.key !== 'Enter' && e.key !== ' ')) return;
-                  e.preventDefault();
-                  p.onSelect(proj.id);
+                  if (editing) return;
+                  const tabs = [...(tabsRef.current?.querySelectorAll<HTMLElement>('[role="tab"]') ?? [])];
+                  const at = tabs.indexOf(e.currentTarget);
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    p.onSelect(proj.id);
+                  } else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.altKey) {
+                    e.preventDefault();
+                    shift(proj.id, e.key === 'ArrowLeft' ? -1 : 1);
+                  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    tabs[(at + (e.key === 'ArrowLeft' ? -1 : 1) + tabs.length) % tabs.length]?.focus();
+                  } else if (e.key === 'F2') {
+                    e.preventDefault();
+                    p.setRenameId(proj.id);
+                  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+                    e.preventDefault();
+                    p.onDelete(proj);
+                  } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+                    e.preventDefault();
+                    const r = e.currentTarget.getBoundingClientRect();
+                    setTabMenu({ x: r.left, y: r.top, project: proj });
+                  }
                 }}
+                // Touch: press and hold opens the same menu.
+                onPointerDown={(e) => {
+                  if (e.pointerType !== 'touch') return;
+                  const { clientX: x, clientY: y } = e;
+                  longPress.current = window.setTimeout(() => setTabMenu({ x, y, project: proj }), 500);
+                }}
+                onPointerUp={() => window.clearTimeout(longPress.current)}
+                onPointerCancel={() => window.clearTimeout(longPress.current)}
+                onPointerLeave={() => window.clearTimeout(longPress.current)}
                 onDoubleClick={() => p.setRenameId(proj.id)}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -348,12 +391,26 @@ export function Dock(p: Props) {
       {tabMenu && (
         <Menu
           x={tabMenu.x}
-          y={tabMenu.y - 96}
+          y={tabMenu.y - 150}
           onClose={() => setTabMenu(null)}
           entries={[
-            { label: 'Rename', icon: <Pencil />, onSelect: () => p.setRenameId(tabMenu.project.id) },
+            { label: 'Rename', icon: <Pencil />, shortcut: 'F2', onSelect: () => p.setRenameId(tabMenu.project.id) },
+            {
+              label: 'Move left',
+              icon: <ChevronLeft />,
+              shortcut: '⌥←',
+              disabled: p.projects[0]?.id === tabMenu.project.id,
+              onSelect: () => shift(tabMenu.project.id, -1),
+            },
+            {
+              label: 'Move right',
+              icon: <ChevronRight />,
+              shortcut: '⌥→',
+              disabled: p.projects[p.projects.length - 1]?.id === tabMenu.project.id,
+              onSelect: () => shift(tabMenu.project.id, 1),
+            },
             'sep',
-            { label: 'Delete project', icon: <Trash2 />, danger: true, onSelect: () => p.onDelete(tabMenu.project) },
+            { label: 'Delete board', icon: <Trash2 />, danger: true, onSelect: () => p.onDelete(tabMenu.project) },
           ]}
         />
       )}

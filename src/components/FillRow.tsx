@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ColorPicker } from './ColorPicker';
+import { useEscapeLayer } from './ui';
 
 export const TEXT_COLORS = ['#191919', '#FFFFFF', '#6B6B6B', '#E03E3E', '#D9730D', '#DFAB01', '#0F7B6C', '#2383E2', '#9065B0'];
 
@@ -138,21 +139,11 @@ function FillPopup({
       if (ref.current?.contains(t) || anchor.contains(t)) return;
       onClose();
     };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // Close only the picker, not the popover or panel it sits in.
-        e.stopImmediatePropagation();
-        e.stopPropagation();
-        onClose();
-      }
-    };
     window.addEventListener('pointerdown', down, true);
-    window.addEventListener('keydown', key, true);
-    return () => {
-      window.removeEventListener('pointerdown', down, true);
-      window.removeEventListener('keydown', key, true);
-    };
+    return () => window.removeEventListener('pointerdown', down, true);
   }, [anchor, onClose]);
+  // Escape closes only the picker, not the popover or panel it sits in.
+  useEscapeLayer(onClose);
 
   return (
     <div

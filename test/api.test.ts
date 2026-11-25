@@ -209,6 +209,7 @@ test('uploads are deduplicated and purged files are removed only when unused', a
   await s.call('DELETE', '/api/items', { ids: ['p2'] });
   await s.call('DELETE', '/api/trash', { ids: ['p2'] });
   assert.ok(!fs.existsSync(file), 'removed once nothing uses it');
+  assert.ok(fs.existsSync(path.join(s.store.backupsDir, 'images', path.basename(file))), 'kept aside for two weeks');
 });
 
 test('non-images are refused', async () => {
@@ -258,4 +259,15 @@ test('stats do not reveal file paths', async () => {
   const r = await s.call('GET', '/api/stats');
   assert.ok(!('dataDir' in r.data));
   assert.ok(!('imagesDir' in r.data));
+});
+
+test('a preview can be stored for an image and is listed with its layers', async () => {
+  const a = (await s.call('POST', '/api/assets/upload', png(11))).data;
+  await s.call('PUT', '/api/items', [{ id: 'th1', projectId: project, kind: 'image', assetId: a.id, x: 0, y: 0, w: 10, h: 10, z: 0 }]);
+  assert.equal((await s.call('PUT', `/api/assets/${a.id}/thumb`, Buffer.from('nope'))).status, 415);
+  const ok = await s.call('PUT', `/api/assets/${a.id}/thumb`, png(12));
+  assert.equal(ok.status, 200);
+  const item = (await s.call('GET', `/api/projects/${project}/items`)).data.find((i: { id: string }) => i.id === 'th1');
+  assert.equal(item.thumb, ok.data.thumb);
+  assert.equal((await fetch(s.base + item.thumb)).status, 200);
 });

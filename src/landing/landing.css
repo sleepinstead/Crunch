@@ -138,27 +138,27 @@
   transition-duration: 0.07s;
   transition-timing-function: ease-out;
 }
-/* Dark keycap: a lifted charcoal face on a near-black edge, so the edge reads */
+/* Dark keycap: a soft charcoal face on a slim darker base. No hard outline, so it
+   reads as one object rather than a box drawn inside a box. */
 .landing .lp-btn--dark {
-  background: linear-gradient(180deg, #474745 0%, #2c2c2a 100%);
+  background: linear-gradient(180deg, #3b3b39 0%, #262624 100%);
   color: #fff;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.22),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
-    0 0 0 1px #0e0e0d,
-    0 4px 0 #0e0e0d,
-    0 14px 26px -10px rgba(15, 15, 15, 0.5);
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 0 0 0.5px rgba(0, 0, 0, 0.35),
+    0 3px 0 #141413,
+    0 12px 22px -10px rgba(15, 15, 15, 0.45);
+}
+.landing .lp-btn--dark:hover {
+  filter: brightness(1.1);
 }
 .landing .lp-btn--dark:active {
+  transform: translateY(3px);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
-    0 0 0 1px #0e0e0d,
-    0 0 0 #0e0e0d,
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 0.5px rgba(0, 0, 0, 0.35),
+    0 0 0 #141413,
     0 4px 10px -6px rgba(15, 15, 15, 0.4);
-}
-.landing .lp-btn--dark:active {
-  transform: translateY(4px);
 }
 .landing .lp-btn--ghost {
   background: #fff;

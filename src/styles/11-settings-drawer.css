@@ -1,0 +1,169 @@
+/* ---------- settings drawer ---------- */
+
+.settings {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 60;
+  width: min(380px, calc(100vw - 24px));
+  bottom: 12px; /* full height */
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+  /* Closed: parked off the right edge. It eases out, and fades only at the very end
+     so its shadow never lingers at the screen edge. */
+  transform: translateX(calc(100% + 28px));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform calc(0.12s * var(--motion)) cubic-bezier(0.4, 0, 1, 1),
+    opacity calc(0.05s * var(--motion)) linear calc(0.07s * var(--motion));
+}
+
+.settings.shown {
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
+  /* Enter: a visible glide with a soft settle (the old curve finished most of
+     the move in the first frame or two, so it read as a pop). */
+  transition:
+    transform calc(0.3s * var(--motion)) cubic-bezier(0.32, 0.72, 0, 1),
+    opacity calc(0.08s * var(--motion)) linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings,
+  .settings.shown {
+    transform: none;
+    transition: opacity calc(0.12s * var(--motion)) linear;
+  }
+}
+
+.settings .settings-body {
+  min-height: 0;
+}
+.settings.trash {
+  min-height: 240px;
+}
+
+.settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 18px 16px 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.settings-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.settings-sub {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 16px 20px;
+}
+.settings-body h3 {
+  margin: 18px 4px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.set-card {
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+.set-row:first-child {
+  border-top: 0;
+}
+.set-row.stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.set-copy {
+  min-width: 0;
+}
+.set-title {
+  font-weight: 500;
+}
+.set-text {
+  margin-top: 2px;
+  color: var(--text-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.set-control {
+  flex-shrink: 0;
+}
+.set-row.stack .set-control {
+  flex-shrink: 1;
+}
+
+.seg.compact {
+  display: grid;
+  min-width: 150px;
+}
+.seg.compact .seg-btn {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.toggle {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  /* The off state needs a visible edge (3:1 against the panel). */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 35%, transparent);
+  transition: background-color 0.15s var(--ease);
+}
+.toggle span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s var(--ease);
+}
+.toggle.on {
+  background: var(--accent);
+}
+.toggle.on span {
+  transform: translateX(14px);
+}
+
+.btn.small {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

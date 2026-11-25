@@ -5,6 +5,7 @@ import { Canvas } from './components/Canvas';
 import { Dock } from './components/Dock';
 import { ConfirmDialog, Dialog, Toasts, Tooltips, type ToastMsg } from './components/ui';
 import { SettingsPanel } from './components/SettingsPanel';
+import { Onboarding, ONBOARDED_KEY } from './components/Onboarding';
 import { TrashPanel } from './components/TrashPanel';
 // The landing page is the front door ("/"), so it ships with the app: no flash of canvas while it loads.
 import Landing from './landing/Landing';
@@ -123,6 +124,24 @@ export function App() {
     [toast],
   );
   const closePanel = useCallback(() => setPanel(null), []);
+  // The welcome tour: shown once, the first time someone reaches the canvas; again from Settings.
+  const [tour, setTour] = useState(false);
+  useEffect(() => {
+    if (landing) return;
+    let seen = false;
+    try {
+      seen = !!localStorage.getItem(ONBOARDED_KEY);
+    } catch {
+      /* ignore */
+    }
+    if (seen) return;
+    const t = window.setTimeout(() => setTour(true), 450);
+    return () => window.clearTimeout(t);
+  }, [landing]);
+  const showTour = () => {
+    setPanel(null);
+    setTour(true);
+  };
 
   // App-level "reduce motion" (in addition to the system setting).
   useEffect(() => {
@@ -310,7 +329,8 @@ export function App() {
         </button>
       )}
       {landing && <Landing onOpenApp={closeLanding} animateIn={landingFromApp} />}
-      <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closePanel} />
+      <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closePanel} onShowTour={showTour} />
+      {tour && !landing && <Onboarding onClose={() => setTour(false)} />}
       <TrashPanel
         open={panel === 'trash'}
         activeProjectId={activeId}

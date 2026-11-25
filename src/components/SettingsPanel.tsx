@@ -63,6 +63,7 @@ export function SettingsPanel(props: {
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
+  onShowTour: () => void;
 }) {
   // Built once in idle time and kept, parked off-screen: opening is then only a
   // class change, so the slide never loses its first frames to a heavy mount.
@@ -102,6 +103,7 @@ function Panel({
   onChange,
   onClose,
   onExited,
+  onShowTour,
 }: {
   open: boolean;
   shown: boolean;
@@ -109,6 +111,7 @@ function Panel({
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
   onExited: () => void;
+  onShowTour: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Stats | null>(null);
@@ -295,6 +298,17 @@ function Panel({
             </Row>
             <Row title="Fade dock while dragging">
               <Toggle label="Fade dock while arranging" on={s.fadeDock} onChange={(v) => onChange({ fadeDock: v })} />
+            </Row>
+          </div>
+        </section>
+
+        <section>
+          <h3>Help</h3>
+          <div className="set-card">
+            <Row title="Welcome tour" text="A quick look at pasting, snapping, groups and boards.">
+              <button className="btn secondary small" onClick={onShowTour}>
+                Show tour
+              </button>
             </Row>
           </div>
         </section>

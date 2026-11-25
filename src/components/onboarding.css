@@ -1,0 +1,874 @@
+/* Onboarding tour: a card with a little looping scene on top, a segmented
+   progress bar, and Previous / Next. Each step brings its own soft colour. */
+
+.ob-scrim {
+  z-index: 300;
+  background: rgba(15, 15, 15, 0.28);
+  backdrop-filter: blur(2px);
+}
+.ob-scrim[data-leaving] {
+  animation: ob-fade-out 0.2s ease-in both;
+}
+@keyframes ob-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+.ob {
+  --tint: #fcefe8;
+  --tint-2: #f8dccd;
+  --ink-tone: #e8603c;
+  position: relative;
+  width: min(440px, calc(100vw - 32px));
+  overflow: hidden;
+  border-radius: 18px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow:
+    0 0 0 1px rgba(15, 15, 15, 0.06),
+    0 24px 64px -16px rgba(15, 15, 15, 0.35),
+    0 8px 20px -10px rgba(15, 15, 15, 0.15);
+  outline: none;
+  animation: ob-in 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.05) both;
+}
+.ob-scrim[data-leaving] .ob {
+  animation: ob-out 0.2s ease-in both;
+}
+@keyframes ob-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+}
+@keyframes ob-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+
+.ob[data-tone='orange'] {
+  --tint: #fcefe8;
+  --tint-2: #f8d8c7;
+  --ink-tone: #d9541f;
+}
+.ob[data-tone='blue'] {
+  --tint: #eaf2fc;
+  --tint-2: #cfe2f8;
+  --ink-tone: #2383e2;
+}
+.ob[data-tone='pink'] {
+  --tint: #fcecf5;
+  --tint-2: #f6d2e6;
+  --ink-tone: #d23f8f;
+}
+.ob[data-tone='green'] {
+  --tint: #e8f5ef;
+  --tint-2: #cbe9db;
+  --ink-tone: #0f7b6c;
+}
+.ob[data-tone='violet'] {
+  --tint: #f1ecfb;
+  --tint-2: #ddd2f5;
+  --ink-tone: #7254c4;
+}
+
+.ob-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  color: rgba(25, 25, 25, 0.55);
+}
+.ob-close:hover {
+  color: #191919;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* ---------- the art area ---------- */
+
+.ob-art {
+  position: relative;
+  height: 220px;
+  overflow: hidden;
+  background: #f7f7f5; /* the app's own canvas, the same on every step */
+}
+.ob-art::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: rgba(15, 15, 15, 0.06);
+}
+.ob-scene {
+  position: absolute;
+  inset: 0;
+  animation: ob-scene-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ob-scene[data-dir='-1'] {
+  animation-name: ob-scene-back;
+}
+@keyframes ob-scene-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+@keyframes ob-scene-back {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+}
+
+.ob-board {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background-image: radial-gradient(circle at 9px 9px, rgba(0, 0, 0, 0.11) 1px, transparent 1.6px);
+  background-size: 18px 18px;
+}
+.ob .lp-poster {
+  position: absolute;
+  inset: 0;
+}
+.ob .lp-poster svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Shared item look */
+.ob-pop,
+.ob-paste,
+.ob-tile,
+.ob-pick {
+  position: relative;
+  overflow: hidden;
+  border-radius: 3px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 10px 22px -12px rgba(0, 0, 0, 0.35);
+}
+
+/* Shared keycaps */
+.ob-keys {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  display: flex;
+  gap: 5px;
+  transform: translateX(-50%);
+}
+.ob-keys kbd {
+  display: inline-grid;
+  place-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, var(--font);
+  font-weight: 600;
+  background: #fff;
+  color: #191919;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 15, 15, 0.09),
+    0 2px 0 rgba(15, 15, 15, 0.12);
+}
+.ob-keys kbd {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 14px;
+  animation: ob-key 4s cubic-bezier(0.3, 0.75, 0.1, 1) infinite both;
+}
+.ob-keys kbd + kbd {
+  animation-delay: 0.08s;
+}
+@keyframes ob-key {
+  0%,
+  6%,
+  16%,
+  100% {
+    transform: none;
+  }
+  10%,
+  13% {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 0 0 1px rgba(15, 15, 15, 0.09),
+      0 0 0 rgba(15, 15, 15, 0.12);
+  }
+}
+
+/* ---------- 1. Welcome: posters pop onto the board ---------- */
+
+.ob-board:has(.ob-pop) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+.ob-pop {
+  width: 66px;
+  height: 84px;
+  animation: ob-pop 5.2s cubic-bezier(0.3, 1.5, 0.5, 1) infinite both;
+}
+.ob-pop--0 {
+  --r: -6deg;
+  --y: 6px;
+}
+.ob-pop--1 {
+  --r: 3deg;
+  --y: -8px;
+  animation-delay: 0.12s;
+}
+.ob-pop--2 {
+  --r: -2deg;
+  --y: 4px;
+  animation-delay: 0.24s;
+}
+.ob-pop--3 {
+  --r: 5deg;
+  --y: -4px;
+  animation-delay: 0.36s;
+}
+@keyframes ob-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(calc(var(--y) + 18px)) scale(0.7) rotate(0deg);
+  }
+  14%,
+  86% {
+    opacity: 1;
+    transform: translateY(var(--y)) scale(1) rotate(var(--r));
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(var(--y)) scale(0.94) rotate(var(--r));
+  }
+}
+.ob-spark {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  animation: ob-spark 5.2s ease-out infinite both;
+}
+.ob-spark--a {
+  left: 18%;
+  top: 22%;
+  background: #f2b33d;
+  animation-delay: 0.5s;
+}
+.ob-spark--b {
+  right: 16%;
+  top: 28%;
+  width: 7px;
+  height: 7px;
+  background: #2383e2;
+  animation-delay: 0.65s;
+}
+.ob-spark--c {
+  right: 26%;
+  bottom: 18%;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: #e0459a;
+  animation-delay: 0.8s;
+}
+@keyframes ob-spark {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  10% {
+    opacity: 1;
+    transform: scale(1.3);
+  }
+  20%,
+  80% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+/* ---------- 2. Paste: keys, a placeholder, the image, selected ---------- */
+
+.ob-paste {
+  width: 100px;
+  height: 124px;
+  margin-top: 34px;
+  animation: ob-paste-box 4s linear infinite both;
+}
+@keyframes ob-paste-box {
+  0%,
+  14% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  20%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.ob-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, #ececea 30%, #f7f7f5 50%, #ececea 70%);
+  background-size: 300% 100%;
+  animation: ob-shimmer 1s linear infinite;
+}
+@keyframes ob-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+.ob-paste .lp-poster {
+  animation: ob-paste-img 4s cubic-bezier(0.25, 0.8, 0.25, 1) infinite both;
+}
+@keyframes ob-paste-img {
+  0%,
+  30% {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  40%,
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.ob-sel {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid #2383e2;
+  animation: ob-sel 4s linear infinite both;
+}
+.ob-sel i {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: #fff;
+  border: 1.5px solid #2383e2;
+}
+.ob-sel i[data-c='nw'] {
+  left: -4px;
+  top: -4px;
+}
+.ob-sel i[data-c='ne'] {
+  right: -4px;
+  top: -4px;
+}
+.ob-sel i[data-c='sw'] {
+  left: -4px;
+  bottom: -4px;
+}
+.ob-sel i[data-c='se'] {
+  right: -4px;
+  bottom: -4px;
+}
+@keyframes ob-sel {
+  0%,
+  44% {
+    opacity: 0;
+  }
+  48%,
+  100% {
+    opacity: 1;
+  }
+}
+
+/* ---------- 3. Arrange: the last tile slides in and snaps ---------- */
+
+.ob-row {
+  display: flex;
+  gap: 24px;
+}
+.ob-tile {
+  width: 76px;
+  height: 96px;
+}
+.ob-tile--drag {
+  animation: ob-drag 4.4s cubic-bezier(0.45, 0, 0.1, 1) infinite both;
+}
+@keyframes ob-drag {
+  0%,
+  12% {
+    transform: translate(34px, 30px) rotate(5deg);
+    box-shadow: 0 18px 34px -14px rgba(0, 0, 0, 0.45);
+  }
+  44%,
+  88% {
+    transform: none;
+  }
+  100% {
+    transform: translate(34px, 30px) rotate(5deg);
+  }
+}
+.ob-guide,
+.ob-gap {
+  position: absolute;
+  animation: ob-guides 4.4s linear infinite both;
+}
+.ob-guide {
+  left: calc(50% - 138px);
+  width: 276px;
+  top: calc(50% - 48px);
+  height: 1px;
+  background: #f24822;
+}
+.ob-gap {
+  top: 50%;
+  width: 24px;
+  height: 1px;
+  background: #ff24bd;
+}
+.ob-gap::before,
+.ob-gap::after {
+  content: '';
+  position: absolute;
+  top: -3px;
+  width: 1px;
+  height: 7px;
+  background: #ff24bd;
+}
+.ob-gap::before {
+  left: 0;
+}
+.ob-gap::after {
+  right: 0;
+}
+.ob-gap span {
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  transform: translateX(-50%);
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: #ff24bd;
+  color: #fff;
+  font: 700 9px/1.4 var(--font);
+}
+.ob-gap--a {
+  left: calc(50% - 62px);
+}
+.ob-gap--b {
+  left: calc(50% + 38px);
+}
+@keyframes ob-guides {
+  0%,
+  42% {
+    opacity: 0;
+  }
+  46%,
+  84% {
+    opacity: 1;
+  }
+  90%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---------- 4. Group: three selected, ⌘G, a frame forms ---------- */
+
+.ob-trio {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  margin-top: 30px;
+  padding: 12px;
+}
+.ob-pick {
+  width: 66px;
+  height: 84px;
+  overflow: visible;
+}
+.ob-pick::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid #2383e2;
+  opacity: 0;
+  animation: ob-pick 4.6s linear infinite both;
+}
+.ob-pick--1::after {
+  animation-name: ob-pick-1;
+}
+.ob-pick--2::after {
+  animation-name: ob-pick-2;
+}
+@keyframes ob-pick {
+  0%,
+  10% {
+    opacity: 0;
+  }
+  12%,
+  44% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ob-pick-1 {
+  0%,
+  16% {
+    opacity: 0;
+  }
+  18%,
+  44% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes ob-pick-2 {
+  0%,
+  22% {
+    opacity: 0;
+  }
+  24%,
+  44% {
+    opacity: 1;
+  }
+  46%,
+  100% {
+    opacity: 0;
+  }
+}
+.ob-frame {
+  position: absolute;
+  inset: 0;
+  border: 1.5px solid #2383e2;
+  border-radius: 4px;
+  background: rgba(35, 131, 226, 0.05);
+  animation: ob-frame 4.6s cubic-bezier(0.25, 0.8, 0.25, 1) infinite both;
+}
+.ob-frame span {
+  position: absolute;
+  left: -1.5px;
+  bottom: calc(100% + 4px);
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #2383e2;
+  color: #fff;
+  font: 600 10px/1.5 var(--font);
+}
+@keyframes ob-frame {
+  0%,
+  44% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+  50%,
+  90% {
+    opacity: 1;
+    transform: none;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.ob-keys--group kbd {
+  animation-name: ob-key-g;
+  animation-duration: 4.6s;
+}
+@keyframes ob-key-g {
+  0%,
+  36%,
+  46%,
+  100% {
+    transform: none;
+  }
+  40%,
+  43% {
+    transform: translateY(2px);
+    box-shadow:
+      inset 0 0 0 1px rgba(15, 15, 15, 0.09),
+      0 0 0 rgba(15, 15, 15, 0.12);
+  }
+}
+
+/* ---------- 5. Style: the board's colour and pattern change ---------- */
+
+.ob-board[data-tone='style'] {
+  animation: ob-bg 8s steps(1, end) infinite;
+}
+@keyframes ob-bg {
+  0% {
+    background-color: #f7f7f5;
+    background-image: radial-gradient(circle at 9px 9px, rgba(0, 0, 0, 0.12) 1px, transparent 1.6px);
+    background-size: 18px 18px;
+  }
+  25% {
+    background-color: #f6ede3;
+    background-image:
+      linear-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  50% {
+    background-color: #e8eef6;
+    background-image: none;
+  }
+  75% {
+    background-color: #1d1d1c;
+    background-image: radial-gradient(circle at 9px 9px, rgba(255, 255, 255, 0.14) 1px, transparent 1.6px);
+    background-size: 18px 18px;
+  }
+}
+.ob-board[data-tone='style'] {
+  transition: background-color 0.4s;
+}
+.ob-style-card {
+  margin-top: -26px;
+}
+.ob-tile--still {
+  width: 84px;
+  height: 104px;
+}
+.ob-swatch-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  display: flex;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 12px;
+  background: #fff;
+  transform: translateX(-50%);
+  box-shadow:
+    0 0 0 1px rgba(15, 15, 15, 0.06),
+    0 8px 20px -8px rgba(15, 15, 15, 0.25);
+}
+.ob-swatch-bar i {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.12);
+}
+.ob-swatch-ring {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px #2383e2;
+  animation: ob-ring 8s cubic-bezier(0.45, 0, 0.1, 1) infinite;
+}
+@keyframes ob-ring {
+  0%,
+  22% {
+    transform: none;
+  }
+  25%,
+  47% {
+    transform: translateX(30px);
+  }
+  50%,
+  72% {
+    transform: translateX(60px);
+  }
+  75%,
+  97% {
+    transform: translateX(90px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* ---------- copy ---------- */
+
+.ob-body {
+  padding: 18px 24px 4px;
+}
+.ob-progress {
+  display: grid;
+  grid-auto-flow: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.ob-seg {
+  position: relative;
+  height: 3px;
+  padding: 0;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  cursor: pointer;
+}
+.ob-seg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--ink-tone);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition:
+    transform 0.45s cubic-bezier(0.25, 0.8, 0.25, 1),
+    background-color 0.4s;
+}
+.ob-seg[data-on]::after {
+  transform: none;
+}
+.ob-copy {
+  animation: ob-copy-in 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+.ob-copy[data-dir='-1'] {
+  animation-name: ob-copy-back;
+}
+@keyframes ob-copy-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+@keyframes ob-copy-back {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+}
+.ob-kicker {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-tone);
+  transition: color 0.4s;
+}
+.ob-count {
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.ob-title {
+  margin: 8px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+.ob-text {
+  min-height: 63px; /* three lines, so the buttons never jump between steps */
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+/* Shortcuts in the copy: plain, just stronger; the scene above shows the keys */
+.ob-text b {
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ---------- buttons ---------- */
+
+.ob-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px 22px;
+}
+.ob-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    background-color 0.15s,
+    color 0.15s,
+    filter 0.2s;
+}
+.ob-btn--primary {
+  background: linear-gradient(180deg, #474745 0%, #2c2c2a 100%);
+  color: #fff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 0 0 1px #0e0e0d,
+    0 3px 0 #0e0e0d,
+    0 10px 20px -10px rgba(15, 15, 15, 0.5);
+}
+.ob-btn--primary:hover {
+  filter: brightness(1.1);
+}
+.ob-btn--primary:active {
+  transform: translateY(3px);
+  transition-duration: 0.07s;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 0 0 1px #0e0e0d,
+    0 0 0 #0e0e0d,
+    0 3px 8px -5px rgba(15, 15, 15, 0.4);
+}
+/* On a dark interface the primary flips to a light keycap */
+[data-tone='dark'] .ob-btn--primary {
+  background: linear-gradient(180deg, #ffffff 0%, #e9e9e7 100%);
+  color: #191919;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 1px rgba(255, 255, 255, 0.35),
+    0 3px 0 #8f8f8b,
+    0 10px 20px -10px rgba(0, 0, 0, 0.7);
+}
+[data-tone='dark'] .ob-btn--primary:hover {
+  filter: brightness(1.03);
+}
+[data-tone='dark'] .ob-btn--primary:active {
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 1px rgba(255, 255, 255, 0.35),
+    0 0 0 #8f8f8b,
+    0 3px 8px -5px rgba(0, 0, 0, 0.6);
+}
+.ob-btn--outline {
+  padding-left: 10px;
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.ob-btn--outline:hover {
+  background: var(--surface-hover);
+}
+.ob-btn--ghost {
+  color: var(--text-3);
+}
+.ob-btn--ghost:hover {
+  color: var(--text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob,
+  .ob *,
+  .ob *::before,
+  .ob *::after {
+    animation: none !important;
+  }
+}

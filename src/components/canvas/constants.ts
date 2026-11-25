@@ -12,8 +12,8 @@ export const DOCK_SPACE = 88;
 
 export const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
-// A dialog or the landing page is on top: the canvas ignores keys and paste.
-export const modalOpen = () => !!document.querySelector('.scrim, .landing');
+// A dialog is on top: the canvas ignores keys and paste.
+export const modalOpen = () => !!document.querySelector('.scrim');
 /** Focus is inside settings, a popover or a menu: canvas shortcuts stay out of the way. */
 export const inPanel = (t: EventTarget | null) => t instanceof Element && !!t.closest('.settings, .popover, .menu');
 export const onControl = (t: EventTarget | null) =>

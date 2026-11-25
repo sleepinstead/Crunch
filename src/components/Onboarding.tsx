@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useEscapeLayer, useFocusTrap } from './ui';
-import { Poster } from '../landing/Posters';
+import { Poster } from './Posters';
 import './onboarding.css';
 
 /** localStorage key: set once the tour has been finished or dismissed. */

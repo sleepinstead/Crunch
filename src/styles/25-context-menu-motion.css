@@ -91,16 +91,9 @@
   color: var(--text);
 }
 
-/* Wraps the canvas and its chrome so the landing page can make them inert without changing layout. */
+/* Groups the canvas and its chrome without affecting layout. */
 .app-layer {
   display: contents;
-}
-/* Shown for the moment the landing page's code is loading, so the canvas never flashes first. */
-.landing-cover {
-  position: fixed;
-  inset: 0;
-  z-index: 400;
-  background: #fbfbfa;
 }
 
 .dialog-head {

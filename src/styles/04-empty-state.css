@@ -30,7 +30,7 @@
   pointer-events: auto;
 }
 
-/* Empty-state buttons: pressable keycaps, like the landing page's */
+/* Empty-state buttons: pressable keycaps */
 .empty-actions .btn.secondary {
   --edge: rgba(15, 15, 15, 0.1);
   --ring: rgba(15, 15, 15, 0.08);

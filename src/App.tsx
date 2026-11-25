@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Project, type View } from './api';
 import { isDark } from './color';
 import { Canvas } from './components/Canvas';
@@ -7,41 +7,8 @@ import { Dock } from './components/Dock';
 import { ConfirmDialog, Dialog, Toasts, Tooltips, type ToastMsg } from './components/ui';
 import { SettingsPanel } from './components/SettingsPanel';
 import { Onboarding, ONBOARDED_KEY } from './components/Onboarding';
-import { TrashPanel } from './components/TrashPanel';
-// The landing page loads as its own chunk; while it does, a page-coloured cover hides the canvas.
-const Landing = lazy(() => import('./landing/Landing'));
 import { DEFAULT_SETTINGS, MOTION_SCALE, normalizeSettings, type Settings } from './settings';
-
-/** "/" is the landing page; "/app" is the canvas. */
-const isLandingPath = () => location.pathname !== '/app';
-
-/** Set once the landing page has been shown; later visits to "/" open the canvas. */
-const VISITED_KEY = 'crunch.visited';
-const hasVisited = () => {
-  try {
-    return !!localStorage.getItem(VISITED_KEY);
-  } catch {
-    return false;
-  }
-};
-const markVisited = () => {
-  try {
-    localStorage.setItem(VISITED_KEY, '1');
-  } catch {
-    /* private mode: the landing simply shows again next time */
-  }
-};
-
-/** First visit: the landing page. After that, "/" goes straight to the canvas. */
-const initialLanding = () => {
-  if (!isLandingPath()) return false;
-  if (hasVisited()) {
-    history.replaceState(null, '', '/app' + location.search);
-    return false;
-  }
-  return true;
-};
-
+import { TrashPanel } from './components/TrashPanel';
 const ACTIVE_KEY = 'crunch.activeProject';
 const store = {
   get: (k: string) => {
@@ -94,31 +61,6 @@ export function App() {
   const [showKeys, setShowKeys] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [panel, setPanel] = useState<'settings' | 'trash' | null>(null);
-  // Real paths, so a reload, back/forward or a shared link keeps the page you were on.
-  const [landing, setLanding] = useState(initialLanding);
-  useEffect(() => {
-    if (landing) markVisited();
-  }, [landing]);
-  // Only animate the landing in when it covers a canvas the user was looking at.
-  const [landingFromApp, setLandingFromApp] = useState(false);
-  useEffect(() => {
-    const on = () => {
-      setLandingFromApp(true);
-      setLanding(isLandingPath());
-    };
-    window.addEventListener('popstate', on);
-    return () => window.removeEventListener('popstate', on);
-  }, []);
-  const openLanding = () => {
-    setPanel(null);
-    if (location.pathname !== '/') history.pushState(null, '', '/');
-    setLandingFromApp(true);
-    setLanding(true);
-  };
-  const closeLanding = () => {
-    if (location.pathname !== '/app') history.pushState(null, '', '/app');
-    setLanding(false);
-  };
   const [reloadSignal, setReloadSignal] = useState(0);
   const settingsOpen = panel === 'settings';
   const togglePanel = (which: 'settings' | 'trash') => setPanel((p) => (p === which ? null : which));
@@ -163,7 +105,6 @@ export function App() {
   // The welcome tour: shown once, the first time someone reaches the canvas; again from Settings.
   const [tour, setTour] = useState(false);
   useEffect(() => {
-    if (landing) return;
     let seen = false;
     try {
       seen = !!localStorage.getItem(ONBOARDED_KEY);
@@ -173,7 +114,7 @@ export function App() {
     if (seen) return;
     const t = window.setTimeout(() => setTour(true), 450);
     return () => window.clearTimeout(t);
-  }, [landing]);
+  }, []);
   const showTour = () => {
     setPanel(null);
     setTour(true);
@@ -283,12 +224,9 @@ export function App() {
     [toast],
   );
 
-  // ⌥1–9 switches project; ? shows shortcuts. None of them apply while the landing page is up.
-  const landingRef = useRef(landing);
-  landingRef.current = landing;
+  // ⌥1–9 switches project; ? shows shortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (landingRef.current) return;
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
         setPanel((p) => (p === 'settings' ? null : 'settings'));
@@ -323,8 +261,7 @@ export function App() {
       data-shadow={settings.imageShadow || undefined}
       style={{ ['--item-radius' as string]: `${settings.imageRadius}px` }}
     >
-      {/* Behind the landing page the app is inert: no focus, no clicks, no screen reader. */}
-      <div className="app-layer" inert={landing}>
+      <div className="app-layer">
         {active && projects && (
           <Canvas
             key={active.id}
@@ -358,21 +295,11 @@ export function App() {
         )}
         {/* The name sits on the canvas, so it takes the canvas's tone, not the interface theme. */}
         {settings.showName && (
-          <button
-            className="brand"
-            data-tone={active && isDark(active.bgColor) ? 'dark' : 'light'}
-            onClick={openLanding}
-            data-tip="About Crunch"
-          >
+          <div className="brand" data-tone={active && isDark(active.bgColor) ? 'dark' : 'light'}>
             Crunch
-          </button>
+          </div>
         )}
       </div>
-      {landing && (
-        <Suspense fallback={<div className="landing-cover" />}>
-          <Landing onOpenApp={closeLanding} animateIn={landingFromApp} />
-        </Suspense>
-      )}
       <SettingsPanel
         open={settingsOpen}
         settings={settings}
@@ -384,7 +311,7 @@ export function App() {
           if (!failed) loadProjects();
         }}
       />
-      {tour && !landing && <Onboarding onClose={() => setTour(false)} />}
+      {tour && <Onboarding onClose={() => setTour(false)} />}
       <TrashPanel
         open={panel === 'trash'}
         activeProjectId={activeId}

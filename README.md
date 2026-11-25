@@ -32,8 +32,8 @@ npm ci
 npm run dev
 ```
 
-Then open http://localhost:3210. The first visit shows a short welcome page and a quick tour. After that, Crunch
-opens straight to your boards.
+Then open http://localhost:3210. The first time, a quick tour shows you around; you can see it again from
+Settings › Help.
 
 To run it the way you would day to day:
 

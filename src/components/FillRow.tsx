@@ -170,7 +170,7 @@ function FillPopup({
       </div>
       <ColorPicker value={value} onChange={onPreview} />
       <div className="fill-pop-label">Swatches</div>
-      <div className="fill-swatches">
+      <div className="fill-swatches" style={{ gridTemplateColumns: `repeat(${swatches.length}, 1fr)` }}>
         {swatches.map((c) => (
           <button
             key={c}

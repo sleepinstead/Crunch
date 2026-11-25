@@ -358,33 +358,80 @@
 
 /* ---------- Colour picker (object) ---------- */
 
-.cb-picker {
+.cb-color {
+  position: absolute;
+  inset: 0;
+}
+/* The thing being sampled: a poster on the board, behind the picker */
+.cb-color-art {
+  position: absolute;
+  left: 22px;
+  top: 22px;
+  width: 118px;
+  height: 148px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08), 0 14px 30px -16px rgba(0, 0, 0, 0.3);
+}
+.cb-color-art .lp-poster {
+  position: absolute;
+  inset: 0;
+}
+.cb-loupe {
+  position: absolute;
+  left: 4px;
+  top: 8px; /* over the poster's flat orange, clear of the sun and stripes */
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #e8603c;
+  border: 3px solid #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.18),
+    0 6px 16px -4px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    opacity 0.18s ease-out,
+    transform 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.cb-loupe::after {
+  content: '';
   position: absolute;
   left: 50%;
-  top: 6px;
-  width: 232px;
-  padding: 10px;
-  transform: translateX(-50%);
-  border-radius: 14px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 1px;
+  box-shadow: 0 0 0 1px #fff;
+}
+.cb-loupe[data-show] {
+  opacity: 1;
+  transform: none;
+}
+
+.cb-picker {
+  position: absolute;
+  left: 154px;
+  top: 4px;
+  width: 190px;
+  padding: 8px;
+  border-radius: 13px;
   background: #fff;
   box-shadow:
     0 0 0 1px rgba(15, 15, 15, 0.05),
-    0 22px 44px -18px rgba(15, 15, 15, 0.28);
-  --hue: 211;
-  --c: #2383e2;
-  transition: --hue 0.9s;
+    0 22px 44px -18px rgba(15, 15, 15, 0.3);
 }
 .cb-sv {
   position: relative;
-  height: 112px;
-  border-radius: 8px;
+  height: 70px;
+  border-radius: 6px;
   background:
     linear-gradient(to top, #000, transparent),
     linear-gradient(to right, #fff, transparent),
     hsl(211 100% 50%);
   transition: background 0.9s;
 }
-.cb-picker[data-on] .cb-sv {
+.cb-color[data-on] .cb-sv {
   background:
     linear-gradient(to top, #000, transparent),
     linear-gradient(to right, #fff, transparent),
@@ -393,8 +440,8 @@
 .cb-sv-thumb,
 .cb-hue-thumb {
   position: absolute;
-  width: 13px;
-  height: 13px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   border: 2px solid #fff;
   box-shadow:
@@ -402,47 +449,83 @@
     0 1px 3px rgba(0, 0, 0, 0.3);
   transform: translate(-50%, -50%);
   transition:
-    left 1s cubic-bezier(0.45, 0, 0.1, 1),
-    top 1s cubic-bezier(0.45, 0, 0.1, 1),
-    background-color 1s;
+    left 0.9s cubic-bezier(0.45, 0, 0.1, 1),
+    top 0.9s cubic-bezier(0.45, 0, 0.1, 1),
+    background-color 0.9s;
 }
 .cb-sv-thumb {
   left: 84%;
   top: 11%;
   background: #2383e2;
 }
-.cb-picker[data-on] .cb-sv-thumb {
+.cb-color[data-on] .cb-sv-thumb {
   left: 74%;
   top: 9%;
   background: #e8603c;
 }
+.cb-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cb-dropper {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: #6b6b67;
+  transition:
+    background-color 0.15s,
+    color 0.15s,
+    box-shadow 0.15s;
+}
+.cb-dropper[data-on] {
+  background: #e9f2fc;
+  color: #2383e2;
+  box-shadow: inset 0 0 0 1px rgba(35, 131, 226, 0.35);
+}
 .cb-hue {
   position: relative;
-  height: 10px;
-  margin-top: 10px;
+  flex: 1;
+  height: 9px;
   border-radius: 5px;
-  background: linear-gradient(to right, #f00, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00);
+  /* the hue wheel at even lightness, not the harsh RGB rainbow */
+  background: linear-gradient(
+    to right,
+    hsl(0 85% 55%),
+    hsl(60 85% 52%) 17%,
+    hsl(120 70% 48%) 33%,
+    hsl(180 75% 48%) 50%,
+    hsl(240 80% 60%) 67%,
+    hsl(300 75% 58%) 83%,
+    hsl(360 85% 55%)
+  );
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.06);
 }
 .cb-hue-thumb {
   top: 50%;
   left: 58.6%;
   background: hsl(211 100% 50%);
 }
-.cb-picker[data-on] .cb-hue-thumb {
+.cb-color[data-on] .cb-hue-thumb {
   left: 3.9%;
   background: hsl(14 100% 50%);
 }
 .cb-fill {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 30px;
-  margin-top: 10px;
-  padding: 0 6px;
-  border-radius: 7px;
+  gap: 7px;
+  height: 26px;
+  margin-top: 8px;
+  padding: 0 7px 0 4px;
+  border-radius: 6px;
   background: #f4f4f3;
-  font: 500 12.5px/1 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  font: 500 11.5px/1 'Plus Jakarta Sans Variable', system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
+  color: #191919;
 }
 .cb-chip {
   width: 18px;
@@ -450,31 +533,70 @@
   border-radius: 4px;
   background: #2383e2;
   box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35);
-  transition: background-color 1s;
+  transition: background-color 0.9s;
 }
-.cb-picker[data-on] .cb-chip {
+.cb-color[data-on] .cb-chip {
   background: #e8603c;
 }
 .cb-hex {
   display: grid;
+  flex: 1;
 }
 .cb-hex > span {
   grid-area: 1 / 1;
   transition:
-    opacity 0.35s 0.5s,
-    transform 0.45s cubic-bezier(0.25, 0.8, 0.25, 1) 0.5s;
+    opacity 0.3s 0.35s,
+    transform 0.4s cubic-bezier(0.25, 0.8, 0.25, 1) 0.35s;
 }
 .cb-hex-b {
   opacity: 0;
   transform: translateY(6px);
 }
-.cb-picker[data-on] .cb-hex-a {
+.cb-color[data-on] .cb-hex-a {
   opacity: 0;
   transform: translateY(-6px);
 }
-.cb-picker[data-on] .cb-hex-b {
+.cb-color[data-on] .cb-hex-b {
   opacity: 1;
   transform: none;
+}
+.cb-alpha {
+  color: #8a8a86;
+}
+.cb-swatches {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 5px;
+  margin-top: 8px;
+}
+.cb-swatches i {
+  aspect-ratio: 1;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.1);
+  transition:
+    transform 0.12s ease-out,
+    box-shadow 0.2s;
+}
+/* The current colour wears the ring */
+.cb-color:not([data-on]) .cb-swatches i[data-i='0'],
+.cb-color[data-on] .cb-swatches i[data-i='1'] {
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 15, 15, 0.1),
+    0 0 0 1.5px #fff,
+    0 0 0 3px #2383e2;
+}
+.cb-swatches i[data-press] {
+  transform: scale(0.88);
+}
+@media (prefers-reduced-motion: reduce) {
+  .cb-loupe,
+  .cb-sv,
+  .cb-sv-thumb,
+  .cb-hue-thumb,
+  .cb-chip,
+  .cb-hex > span {
+    transition: none;
+  }
 }
 
 /* ---------- Snap diagram ---------- */

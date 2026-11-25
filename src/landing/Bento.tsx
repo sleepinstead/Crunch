@@ -230,13 +230,22 @@ function Paste() {
 
 /* ---------------- Color (object) ---------------- */
 
-type ColorS = { on: boolean };
+// The eyedropper story: the dropper is armed, a loupe samples the poster's
+// orange, the picker glides to it; clicking the blue swatch is the reset.
+type ColorS = { on: boolean; dropper: boolean; loupe: boolean; swatch: boolean };
+const COLOR_SWATCHES = ['#2383E2', '#E8603C', '#F2B33D', '#1F3D33', '#191919', '#F7F7F5'];
 const colorScript = (i: number) => async (a: Act<ColorS>) => {
   await a.wait(LEAD + i * STEP);
-  await a.set({ on: true });
+  await a.set({ dropper: true });
+  await a.wait(380);
+  await a.set({ loupe: true });
+  await a.wait(700);
+  await a.set({ on: true, loupe: false, dropper: false });
   await a.wait(2600);
-  await a.set({ on: false });
-  await a.wait(2200);
+  await a.set({ swatch: true });
+  await a.wait(160);
+  await a.set({ on: false, swatch: false });
+  await a.wait(1800);
 };
 
 function Color() {
@@ -246,21 +255,55 @@ function Color() {
       title={<b>Colours, picked properly.</b>}
       picture={
         <div className="cb-picture cb-picture--center">
-          <Stage<ColorS> width={360} height={210} initial={{ on: false }} poster={{ on: true }} play="loop" script={colorScript(3)} className="cb-stage">
+          <Stage<ColorS>
+            width={360}
+            height={210}
+            initial={{ on: false, dropper: false, loupe: false, swatch: false }}
+            poster={{ on: true, dropper: false, loupe: false, swatch: false }}
+            play="loop"
+            script={colorScript(3)}
+            className="cb-stage"
+          >
             {(s) => (
-              <div className="cb-picker" data-on={s.on || undefined}>
-                <div className="cb-sv">
-                  <i className="cb-sv-thumb" />
+              <div className="cb-color" data-on={s.on || undefined}>
+                <div className="cb-color-art">
+                  <Poster kind="sun" />
+                  <i className="cb-loupe" data-show={s.loupe || undefined} />
                 </div>
-                <div className="cb-hue">
-                  <i className="cb-hue-thumb" />
-                </div>
-                <div className="cb-fill">
-                  <span className="cb-chip" />
-                  <span className="cb-hex">
-                    <span className="cb-hex-a">2383E2</span>
-                    <span className="cb-hex-b">E8603C</span>
-                  </span>
+                <div className="cb-picker">
+                  <div className="cb-sv">
+                    <i className="cb-sv-thumb" />
+                  </div>
+                  <div className="cb-tools">
+                    <span className="cb-dropper" data-on={s.dropper || undefined}>
+                      <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden>
+                        <path
+                          d="m9.6 3.3 3.1 3.1M11.2 1.8a1.6 1.6 0 0 1 2.3 2.3L11.9 5.7l-1.6-1.6ZM10.4 5 4 11.4l-.6 2.2 2.2-.6L12 6.6"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                    <div className="cb-hue">
+                      <i className="cb-hue-thumb" />
+                    </div>
+                  </div>
+                  <div className="cb-fill">
+                    <span className="cb-chip" />
+                    <span className="cb-hex">
+                      <span className="cb-hex-a">2383E2</span>
+                      <span className="cb-hex-b">E8603C</span>
+                    </span>
+                    <span className="cb-alpha">100%</span>
+                  </div>
+                  <div className="cb-swatches">
+                    {COLOR_SWATCHES.map((c, i) => (
+                      <i key={c} style={{ background: c }} data-i={i} data-press={(s.swatch && i === 0) || undefined} />
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

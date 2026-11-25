@@ -33,27 +33,28 @@ type Geo = {
 
 const GEO: Record<Layout, Geo> = {
   wide: {
-    // A second row runs down into the fade, so the board reads as full, not a strip.
+    // Four equal columns, centred in the window: 4 × 170 + 3 × 30 = 770 of 920.
+    // Row two keeps the same columns, sits clear of the size label, and runs
+    // down into the fade so the board reads as full, not a strip.
     extras: [
-      { x: 150, y: 362, w: 132, h: 164, kind: 'type' },
-      { x: 312, y: 362, w: 268, h: 164, kind: 'waves' },
-      { x: 610, y: 362, w: 150, h: 104, kind: 'note' },
-      { x: 790, y: 362, w: 130, h: 164, kind: 'sun' },
+      { x: 115, y: 378, w: 170, h: 200, kind: 'type' },
+      { x: 315, y: 378, w: 370, h: 200, kind: 'waves' },
+      { x: 715, y: 378, w: 170, h: 112, kind: 'note' },
     ],
     w: 170,
     h: 210,
-    top: 122,
+    top: 112,
     gap: 30,
     posters: [
-      { x: 150, kind: 'sun' },
-      { x: 350, kind: 'arches' },
-      { x: 550, kind: 'grid' },
+      { x: 115, kind: 'sun' },
+      { x: 315, kind: 'arches' },
+      { x: 515, kind: 'grid' },
     ],
-    target: { x: 750, y: 122 },
-    pasteAt: { x: 700, y: 196 },
-    rest: { x: 860, y: 330 },
-    lineFrom: 150,
-    lineTo: 920,
+    target: { x: 715, y: 112 },
+    pasteAt: { x: 610, y: 178 },
+    rest: { x: 918, y: 262 },
+    lineFrom: 115,
+    lineTo: 885,
   },
   compact: {
     extras: [
@@ -207,6 +208,7 @@ export function HeroDemo() {
                 );
               })}
             </div>
+            <div className="hd2-fade" aria-hidden />
           </>
         );
       }}

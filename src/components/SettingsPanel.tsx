@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Check, Copy, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { api, type Stats } from '../api';
 import type { Settings } from '../settings';
 import { PATTERNS, SWATCHES } from './Dock';
@@ -112,7 +112,6 @@ function Panel({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [copied, setCopied] = useState(false);
   const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => {
@@ -330,18 +329,6 @@ function Panel({
                 onCommit={(c) => c && onChange({ newColor: c })}
                 onPreview={(c) => onChange({ newColor: c })}
               />
-              <div className="swatches">
-                {SWATCHES.map((c) => (
-                  <button
-                    key={c}
-                    className={`swatch${s.newColor.toUpperCase() === c ? ' on' : ''}`}
-                    style={{ background: c }}
-                    onClick={() => onChange({ newColor: c })}
-                    aria-label={c}
-                    data-tip={c}
-                  />
-                ))}
-              </div>
             </Row>
           </div>
         </section>
@@ -362,25 +349,6 @@ function Panel({
             </Row>
             <Row title="Library" text={stats ? `${stats.images} images · ${formatBytes(stats.bytes)} · ${stats.projects} projects` : '…'}>
               <span />
-            </Row>
-            <Row title="Location" text={stats?.imagesDir ?? '…'} stack>
-              <button
-                className="btn secondary small"
-                disabled={!stats}
-                onClick={async () => {
-                  if (!stats) return;
-                  try {
-                    await navigator.clipboard.writeText(stats.imagesDir);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 1500);
-                  } catch {
-                    /* ignore */
-                  }
-                }}
-              >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-                {copied ? 'Copied' : 'Copy path'}
-              </button>
             </Row>
           </div>
         </section>

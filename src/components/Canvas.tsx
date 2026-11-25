@@ -417,7 +417,9 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const preview = useRef<Change | null>(null);
   const [sidebar, setSidebarState] = useState<{ open: boolean; tab: 'layers' | 'design' }>(() => {
     try {
-      return { open: false, tab: 'layers', ...JSON.parse(localStorage.getItem('crunch.sidebar') ?? '{}') };
+      // Only the tab is remembered: a reload always starts with the canvas clear.
+      const saved = JSON.parse(localStorage.getItem('crunch.sidebar') ?? '{}');
+      return { open: false, tab: saved.tab === 'design' ? 'design' : 'layers' };
     } catch {
       return { open: false, tab: 'layers' };
     }

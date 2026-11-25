@@ -1371,3 +1371,16 @@ svg {
   padding-top: 0;
   border-top: 0;
 }
+
+.trash-thumb img.missing {
+  visibility: hidden;
+}
+.trash-thumb:has(img.missing)::before {
+  content: 'File missing';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+  font-size: 12px;
+}

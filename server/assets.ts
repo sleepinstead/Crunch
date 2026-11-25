@@ -100,6 +100,8 @@ export function storeAsset(buf: Buffer, sourceUrl: string | null): AssetRow {
 }
 
 function writeAtomic(target: string, buf: Buffer) {
+  // Recreate the folder if it was removed while the server was running.
+  fs.mkdirSync(path.dirname(target), { recursive: true });
   const tmp = `${target}.${process.pid}.tmp`;
   const fd = fs.openSync(tmp, 'w');
   try {

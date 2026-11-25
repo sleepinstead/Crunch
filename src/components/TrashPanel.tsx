@@ -143,7 +143,13 @@ function Panel({
             {items.map((t) => (
               <figure key={t.id} className="trash-card">
                 <div className="trash-thumb">
-                  <img src={t.src} alt="" loading="lazy" draggable={false} />
+                  <img
+                    src={t.src}
+                    alt=""
+                    loading="lazy"
+                    draggable={false}
+                    onError={(e) => e.currentTarget.classList.add('missing')}
+                  />
                   <div className="trash-actions">
                     <button className="btn secondary small" onClick={() => restore([t.id])} title="Restore">
                       <RotateCcw size={13} /> Restore

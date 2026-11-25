@@ -52,3 +52,6 @@ Thumbs.db
 .claude/
 CLAUDE.md
 .impeccable
+
+# Crunch library (database + image files). Never commit or git-clean it.
+data/

@@ -146,11 +146,8 @@ export default function Landing({ onOpenApp, animateIn = false }: { onOpenApp: (
               <br />
               <span>Copy any image or link, then paste it onto the canvas.</span>
             </h2>
-            <button className="lp-btn lp-btn--dark lp-btn--large" onClick={open}>
-              Open Crunch <ArrowRight size={17} />
-            </button>
             <p className="lp-cta-note">
-              Or press <kbd>Esc</kbd> to jump straight in.
+              Press <kbd>Esc</kbd> to jump straight in.
             </p>
           </Reveal>
         </section>

@@ -44,7 +44,7 @@ function Words({ text, start = 0, step = 55 }: { text: string; start?: number; s
   );
 }
 
-export default function Landing({ onOpenApp }: { onOpenApp: () => void }) {
+export default function Landing({ onOpenApp, animateIn = false }: { onOpenApp: () => void; animateIn?: boolean }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -75,7 +75,7 @@ export default function Landing({ onOpenApp }: { onOpenApp: () => void }) {
   const toFeatures = () => scroller.current?.querySelector('#features')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   return (
-    <div ref={scroller} className="landing" data-tone="light" data-leaving={leaving || undefined}>
+    <div ref={scroller} className="landing" data-tone="light" data-enter={animateIn || undefined} data-leaving={leaving || undefined}>
       <header className="lp-nav" data-scrolled={scrolled || undefined}>
         <div className="lp-nav-inner">
           <button className="lp-logo" onClick={() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })}>
@@ -135,8 +135,12 @@ export default function Landing({ onOpenApp }: { onOpenApp: () => void }) {
             <h2 className="lp-h2 lp-h2--center">
               Your next board starts with{' '}
               <span className="lp-key-inline" aria-label="Command V">
-                <kbd>⌘</kbd>
-                <kbd>V</kbd>
+                <kbd className="lp-cap">
+                  <span>⌘</span>
+                </kbd>
+                <kbd className="lp-cap">
+                  <span>V</span>
+                </kbd>
               </span>
               <br />
               <span>Copy any image or link, then paste it onto the canvas.</span>
@@ -145,7 +149,7 @@ export default function Landing({ onOpenApp }: { onOpenApp: () => void }) {
               Open Crunch <ArrowRight size={17} />
             </button>
             <p className="lp-cta-note">
-              Press <kbd>Esc</kbd> to go back to your canvas.
+              Or press <kbd>Esc</kbd> to jump straight in.
             </p>
           </Reveal>
         </section>

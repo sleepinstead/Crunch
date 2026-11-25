@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Project, type View } from './api';
 import { isDark } from './color';
 import { Canvas } from './components/Canvas';
@@ -6,10 +6,12 @@ import { Dock } from './components/Dock';
 import { ConfirmDialog, Dialog, Toasts, Tooltips, type ToastMsg } from './components/ui';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TrashPanel } from './components/TrashPanel';
+// The landing page is the front door ("/"), so it ships with the app: no flash of canvas while it loads.
+import Landing from './landing/Landing';
 import { DEFAULT_SETTINGS, MOTION_SCALE, normalizeSettings, type Settings } from './settings';
 
-// The landing page only loads when someone opens it (from the logo).
-const Landing = lazy(() => import('./landing/Landing'));
+/** "/" is the landing page; "/app" is the canvas. */
+const isLandingPath = () => location.pathname !== '/app';
 
 const ACTIVE_KEY = 'crunch.activeProject';
 const store = {
@@ -63,19 +65,26 @@ export function App() {
   const [showKeys, setShowKeys] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [panel, setPanel] = useState<'settings' | 'trash' | null>(null);
-  // The landing page lives at #welcome, so back/forward and reloads keep it.
-  const [landing, setLanding] = useState(() => location.hash === '#welcome');
+  // Real paths, so a reload, back/forward or a shared link keeps the page you were on.
+  const [landing, setLanding] = useState(isLandingPath);
+  // Only animate the landing in when it covers a canvas the user was looking at.
+  const [landingFromApp, setLandingFromApp] = useState(false);
   useEffect(() => {
-    const on = () => setLanding(location.hash === '#welcome');
-    window.addEventListener('hashchange', on);
-    return () => window.removeEventListener('hashchange', on);
+    const on = () => {
+      setLandingFromApp(true);
+      setLanding(isLandingPath());
+    };
+    window.addEventListener('popstate', on);
+    return () => window.removeEventListener('popstate', on);
   }, []);
   const openLanding = () => {
     setPanel(null);
-    location.hash = 'welcome';
+    if (location.pathname !== '/') history.pushState(null, '', '/');
+    setLandingFromApp(true);
+    setLanding(true);
   };
   const closeLanding = () => {
-    if (location.hash === '#welcome') history.pushState(null, '', location.pathname + location.search);
+    if (location.pathname !== '/app') history.pushState(null, '', '/app');
     setLanding(false);
   };
   const [reloadSignal, setReloadSignal] = useState(0);
@@ -300,11 +309,7 @@ export function App() {
           Crunch
         </button>
       )}
-      {landing && (
-        <Suspense fallback={null}>
-          <Landing onOpenApp={closeLanding} />
-        </Suspense>
-      )}
+      {landing && <Landing onOpenApp={closeLanding} animateIn={landingFromApp} />}
       <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closePanel} />
       <TrashPanel
         open={panel === 'trash'}

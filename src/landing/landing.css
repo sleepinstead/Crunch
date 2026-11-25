@@ -16,6 +16,9 @@
   font-family: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   scroll-behavior: smooth;
+}
+/* Fade in only when opened from the canvas; on a fresh load it is simply there. */
+.landing[data-enter] {
   animation: lp-enter 0.45s var(--rise) both;
 }
 .landing[data-leaving] {
@@ -113,9 +116,9 @@
   letter-spacing: -0.01em;
   white-space: nowrap;
   transition:
-    transform 0.25s var(--rise),
-    background-color 0.2s,
-    box-shadow 0.25s;
+    transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    filter 0.2s;
 }
 .lp-btn svg {
   transition: transform 0.3s var(--rise);
@@ -123,28 +126,57 @@
 .lp-btn:hover svg {
   transform: translateX(3px);
 }
-.lp-btn:active {
-  transform: scale(0.97);
+/* 3D, like the bento keycaps: a face on a visible edge that presses down */
+.landing .lp-btn {
+  transform: translateY(0);
 }
+.landing .lp-btn:hover {
+  filter: brightness(1.08);
+}
+.landing .lp-btn:active {
+  transform: translateY(3px);
+  transition-duration: 0.07s;
+  transition-timing-function: ease-out;
+}
+/* Dark keycap: a lifted charcoal face on a near-black edge, so the edge reads */
 .landing .lp-btn--dark {
-  background: var(--ink);
+  background: linear-gradient(180deg, #474745 0%, #2c2c2a 100%);
   color: #fff;
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.12) inset,
-    0 10px 24px -10px rgba(15, 15, 15, 0.45);
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 0 0 1px #0e0e0d,
+    0 4px 0 #0e0e0d,
+    0 14px 26px -10px rgba(15, 15, 15, 0.5);
 }
-.landing .lp-btn--dark:hover {
-  background: #2b2b29;
+.landing .lp-btn--dark:active {
   box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.12) inset,
-    0 14px 30px -10px rgba(15, 15, 15, 0.5);
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.35),
+    0 0 0 1px #0e0e0d,
+    0 0 0 #0e0e0d,
+    0 4px 10px -6px rgba(15, 15, 15, 0.4);
+}
+.landing .lp-btn--dark:active {
+  transform: translateY(4px);
 }
 .landing .lp-btn--ghost {
+  background: #fff;
   color: var(--ink);
-  box-shadow: inset 0 0 0 1px rgba(15, 15, 15, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 15, 15, 0.08),
+    0 3px 0 rgba(15, 15, 15, 0.1),
+    0 10px 22px -10px rgba(15, 15, 15, 0.25);
 }
 .landing .lp-btn--ghost:hover {
-  background: rgba(15, 15, 15, 0.04);
+  filter: brightness(0.985);
+}
+.landing .lp-btn--ghost:active {
+  background: #fafaf8;
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 15, 15, 0.08),
+    0 0 0 rgba(15, 15, 15, 0.1),
+    0 4px 10px -6px rgba(15, 15, 15, 0.25);
 }
 .lp-btn--small {
   height: 36px;
@@ -360,28 +392,66 @@
   }
 }
 
-/* ⌘V as real keycaps inside the closing headline */
+/* ⌘V keycaps in the closing headline: the bento's keys, sized from the headline */
 .lp-key-inline {
   display: inline-flex;
-  gap: 0.12em;
-  vertical-align: 0.08em;
+  gap: 0.14em;
+  margin-left: 0.08em;
+  vertical-align: middle; /* box centre on baseline + half x-height */
+  transform: translateY(-0.12em); /* …then up to the cap-height centre */
   color: inherit !important;
 }
-.lp-key-inline kbd {
-  display: inline-grid;
+.landing .lp-cap {
+  display: grid;
   place-items: center;
-  min-width: 1.05em;
+  width: 1.05em;
   height: 1.05em;
-  padding: 0 0.16em;
-  border-radius: 0.22em;
+  padding: 0;
+  border-radius: 0.25em;
+  font-size: inherit; /* not the app's global 11px kbd */
   background: #fff;
-  color: var(--ink);
-  font: 600 0.72em/1 -apple-system, BlinkMacSystemFont, var(--font);
+  color: #191919;
   box-shadow:
-    inset 0 0 0 1px rgba(15, 15, 15, 0.1),
-    0 0.06em 0 rgba(15, 15, 15, 0.12),
-    0 0.3em 0.6em -0.3em rgba(15, 15, 15, 0.3);
+    inset 0 0 0 0.018em rgba(15, 15, 15, 0.08),
+    0 0.052em 0 rgba(15, 15, 15, 0.1),
+    0 0.17em 0.38em -0.17em rgba(15, 15, 15, 0.25);
 }
+.landing .lp-h2 .lp-cap > span {
+  display: block;
+  margin: 0;
+  color: #191919; /* not the headline's muted second-line span */
+  font: 600 0.46em/1 -apple-system, BlinkMacSystemFont, 'Plus Jakarta Sans Variable', sans-serif;
+  letter-spacing: 0;
+}
+
+/* ⌘V pressed every few seconds, the V a beat after the ⌘ (as in the bento) */
+.lp-reveal[data-seen] .lp-cap {
+  animation: lp-cap-press 3.6s cubic-bezier(0.3, 0.75, 0.1, 1) 1.2s infinite both;
+}
+.lp-reveal[data-seen] .lp-cap + .lp-cap {
+  animation-delay: 1.29s;
+}
+@keyframes lp-cap-press {
+  0%,
+  17%,
+  100% {
+    transform: none;
+  }
+  6% {
+    transform: translateY(0.052em);
+    background: #fafaf8;
+    box-shadow:
+      inset 0 0 0 0.018em rgba(15, 15, 15, 0.08),
+      0 0 0 rgba(15, 15, 15, 0.1),
+      0 0.07em 0.17em -0.1em rgba(15, 15, 15, 0.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-reveal[data-seen] .lp-cap {
+    animation: none;
+  }
+}
+
 .lp-cta .lp-h2 > span:not(.lp-key-inline) {
   display: inline-block;
   margin-top: 0.35em;

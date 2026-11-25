@@ -23,12 +23,23 @@ export function TrashPanel(props: {
   onClose: () => void;
   toast: (text: string, tone?: 'info' | 'error') => void;
 }) {
+  // Built once in idle time and kept, parked off-screen: opening is then only a
+  // class change, so the slide never loses its first frames to a heavy mount.
   const [mounted, setMounted] = useState(props.open);
   const [shown, setShown] = useState(false);
 
   useEffect(() => {
+    if (mounted) return;
+    const ric = window.requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 200));
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout;
+    const id = ric(() => setMounted(true));
+    return () => cancel(id);
+  }, [mounted]);
+
+  useEffect(() => {
     if (props.open) {
       setMounted(true);
+      // Two frames so the off-screen start position is painted before transitioning.
       let raf2 = 0;
       const raf1 = requestAnimationFrame(() => (raf2 = requestAnimationFrame(() => setShown(true))));
       return () => {
@@ -40,7 +51,7 @@ export function TrashPanel(props: {
   }, [props.open]);
 
   if (!mounted) return null;
-  return <Panel {...props} shown={shown} onExited={() => !props.open && setMounted(false)} />;
+  return <Panel {...props} shown={shown} onExited={() => {}} />;
 }
 
 function Panel({

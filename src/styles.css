@@ -955,10 +955,11 @@ svg {
   transform: none;
   opacity: 1;
   pointer-events: auto;
-  /* Enter: snappy, with a short settle. */
+  /* Enter: a visible glide with a soft settle (the old curve finished most of
+     the move in the first frame or two, so it read as a pop). */
   transition:
-    transform calc(0.18s * var(--motion)) cubic-bezier(0.2, 0.9, 0.3, 1),
-    opacity calc(0.06s * var(--motion)) linear;
+    transform calc(0.3s * var(--motion)) cubic-bezier(0.32, 0.72, 0, 1),
+    opacity calc(0.08s * var(--motion)) linear;
 }
 
 @media (prefers-reduced-motion: reduce) {

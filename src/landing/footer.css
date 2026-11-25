@@ -177,14 +177,15 @@
   height: 22px;
   padding: 0 5px;
   border-radius: 6px;
-  background: #1f1f1d;
-  color: var(--lf-ink);
+  /* light keycaps, like the footer's buttons */
+  background: linear-gradient(180deg, #ffffff 0%, #ececea 100%);
+  color: #191919;
   font-size: 12px;
   font-weight: 600;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.06),
-    0 2px 0 #000;
+    inset 0 1px 0 #fff,
+    0 0 0 1px rgba(255, 255, 255, 0.35),
+    0 2px 0 #9d9d99;
 }
 .lf-key kbd + kbd {
   margin-right: 6px;
@@ -204,24 +205,42 @@
 .lf-dot {
   flex: 1;
 }
+/* Back to top: the same light keycap as the footer's Open Crunch */
 .landing .lf-up {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  color: var(--lf-ink-2);
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px var(--lf-line);
+  color: #191919;
+  background: linear-gradient(180deg, #ffffff 0%, #ececea 100%);
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 1px rgba(255, 255, 255, 0.4),
+    0 3px 0 #9d9d99,
+    0 10px 22px -10px rgba(0, 0, 0, 0.8);
   transition:
-    color 0.15s,
-    background-color 0.15s,
-    transform 0.35s var(--rise);
+    transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    filter 0.2s;
+}
+.landing .lf-up svg {
+  transition: transform 0.3s var(--rise);
 }
 .landing .lf-up:hover {
-  color: var(--lf-ink);
-  background: rgba(255, 255, 255, 0.1);
-  transform: translateY(-3px);
+  filter: brightness(1.04);
+}
+.landing .lf-up:hover svg {
+  transform: translateY(-2px);
+}
+.landing .lf-up:active {
+  transform: translateY(3px);
+  transition-duration: 0.07s;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 1px rgba(255, 255, 255, 0.4),
+    0 0 0 #9d9d99,
+    0 4px 10px -6px rgba(0, 0, 0, 0.8);
 }
 
 @media (max-width: 860px) {

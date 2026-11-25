@@ -197,19 +197,83 @@ svg {
 }
 
 .sel-box {
-  box-shadow: 0 0 0 calc(1.5px / var(--zoom)) var(--accent);
-  /* Where a rounded corner's curve crosses the diagonal (r · (1 − 1/√2)), so handles sit on the edge. */
-  --corner-inset: calc(var(--item-radius, 0px) * 0.2929);
+  /* Like Figma: a sharp bounding rectangle, whatever the image's corner radius. */
+  box-shadow: 0 0 0 calc(1px / var(--zoom)) var(--accent);
+  --corner-inset: 0px;
+}
+.world.busy .item:hover::after {
+  display: none;
+}
+/* Hover outline follows the image's shape. */
+.item:hover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 calc(1.5px / var(--zoom)) var(--accent);
+  pointer-events: none;
+}
+.item {
+  position: absolute;
 }
 
 .handle {
   position: absolute;
-  width: calc(9px / var(--zoom));
-  height: calc(9px / var(--zoom));
+  z-index: 2;
+  width: calc(8px / var(--zoom));
+  height: calc(8px / var(--zoom));
   background: #fff;
-  border: calc(1.5px / var(--zoom)) solid var(--accent);
-  border-radius: calc(2px / var(--zoom));
+  border: calc(1px / var(--zoom)) solid var(--accent);
+  border-radius: calc(1px / var(--zoom));
   pointer-events: auto;
+}
+
+/* Invisible edge strips: drag any side to resize (aspect kept). */
+.edge {
+  position: absolute;
+  z-index: 1;
+  pointer-events: auto;
+}
+.edge.n,
+.edge.s {
+  left: 0;
+  right: 0;
+  height: calc(8px / var(--zoom));
+  cursor: ns-resize;
+}
+.edge.e,
+.edge.w {
+  top: 0;
+  bottom: 0;
+  width: calc(8px / var(--zoom));
+  cursor: ew-resize;
+}
+.edge.n {
+  top: calc(-4px / var(--zoom));
+}
+.edge.s {
+  bottom: calc(-4px / var(--zoom));
+}
+.edge.e {
+  right: calc(-4px / var(--zoom));
+}
+.edge.w {
+  left: calc(-4px / var(--zoom));
+}
+
+.size-label {
+  position: absolute;
+  z-index: 3;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .handle::after {
@@ -810,7 +874,6 @@ svg {
 
 .item,
 .item img,
-.sel-box,
 .placeholder {
   border-radius: var(--item-radius, 0px);
 }

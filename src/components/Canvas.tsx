@@ -943,9 +943,9 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     if (handle) {
       const id = handle.dataset.for!;
       const it = itemsRef.current[id];
-      const corner = handle.dataset.handle as Corner;
-      const dirX = corner.includes('w') ? -1 : 1;
-      const dirY = corner.includes('n') ? -1 : 1;
+      const name = handle.dataset.handle!; // corner (nw…) or edge (n, e, s, w)
+      const dirX = name.includes('w') ? -1 : name.includes('e') ? 1 : 0;
+      const dirY = name.includes('n') ? -1 : name.includes('s') ? 1 : 0;
       // The anchor is the opposite corner, in world space (accounting for rotation).
       const r = (it.rotation ?? 0) * RAD;
       const ox = (-dirX * it.w) / 2;
@@ -1071,7 +1071,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const sy = (-dx * sin + dy * cos) * m.dirY;
       // Project onto the diagonal so the aspect ratio is kept.
       const r = m.ratio;
-      const w = Math.max(16 / v.zoom, (sx + sy / r) / (1 + 1 / (r * r)));
+      const min = 16 / v.zoom;
+      let w: number;
+      if (!m.dirY) w = Math.max(min, sx); // left/right edge
+      else if (!m.dirX) w = Math.max(min, sy) * r; // top/bottom edge
+      else w = Math.max(min, (sx + sy / r) / (1 + 1 / (r * r))); // corner
       const h = w / r;
       const hx = (m.dirX * w) / 2;
       const hy = (m.dirY * h) / 2;
@@ -1282,6 +1286,10 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
                     <div key={`r${c}`} className={`rot ${c}`} data-rotate={c} data-for={it.id} />
                   ))}
                 {selected.length === 1 &&
+                  (['n', 'e', 's', 'w'] as const).map((e) => (
+                    <div key={`e${e}`} className={`edge ${e}`} data-handle={e} data-for={it.id} />
+                  ))}
+                {selected.length === 1 &&
                   (['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
                     <div key={c} className={`handle ${c}`} data-handle={c} data-for={it.id} />
                   ))}
@@ -1323,6 +1331,22 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
             </div>
           </div>
         )}
+        {selected.length > 0 &&
+          !marquee &&
+          (() => {
+            const b = boundsOf(selected)!;
+            const one = selected.length === 1 ? selected[0] : null;
+            const w = one ? one.w : b.w;
+            const h = one ? one.h : b.h;
+            return (
+              <div
+                className="size-label"
+                style={{ left: (b.x + b.w / 2) * view.zoom + view.x, top: (b.y + b.h) * view.zoom + view.y + 8 }}
+              >
+                {Math.round(w)} × {Math.round(h)}
+              </div>
+            );
+          })()}
         {dragOver && <div className="drop-ring" />}
         {rotLabel && (
           <div className="rot-label" style={{ left: rotLabel.x + 14, top: rotLabel.y + 14 }}>

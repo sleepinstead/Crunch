@@ -1269,6 +1269,39 @@ svg {
 .picker-pop {
   width: 240px;
   padding: 10px;
+  /* Closed: tucked toward the panel it came from. Exit is quick and accelerating. */
+  opacity: 0;
+  transform: translateX(-8px) scale(0.96);
+  transform-origin: left bottom;
+  transition:
+    opacity 0.12s ease-in,
+    transform 0.16s cubic-bezier(0.4, 0, 1, 1);
+  will-change: transform, opacity;
+}
+.picker-pop.from-left {
+  transform: translateX(8px) scale(0.96);
+  transform-origin: right bottom;
+}
+.picker-pop.shown {
+  opacity: 1;
+  transform: none;
+  /* Enter: quick start, soft settle. */
+  transition:
+    opacity 0.18s ease-out,
+    transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .picker-pop,
+  .picker-pop.shown {
+    transition: opacity 0.12s linear;
+    transform: none;
+  }
+}
+/* While dragging in the picker the canvas follows the pointer exactly, with no fade lag. */
+[data-color-dragging] .canvas,
+[data-color-dragging] .bg-chip,
+[data-color-dragging] .swatch {
+  transition: none;
 }
 .picker-pop .cp {
   margin-top: 0;

@@ -79,30 +79,50 @@ function TabName({ value, onDone }: { value: string; onDone: (v: string | null) 
  * Floating popup beside the background panel. It lives inside that panel's DOM so
  * clicks in it don't dismiss the panel, but is positioned against the viewport.
  */
-function PickerPopup({ children }: { children: React.ReactNode }) {
+function PickerPopup({ open, children }: { open: boolean; children: React.ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [mounted, setMounted] = useState(open);
+  const [shown, setShown] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number; side: 'right' | 'left' } | null>(null);
+
+  useEffect(() => {
+    if (open) setMounted(true);
+    else setShown(false);
+  }, [open]);
+
+  // Measure once, before the first paint, then animate in from that spot (no second nudge).
   useLayoutEffect(() => {
+    if (!mounted) return;
     const el = ref.current;
     const host = el?.closest('.bg-pop');
     if (!el || !host) return;
-    const place = () => {
-      const h = host.getBoundingClientRect();
-      const r = el.getBoundingClientRect();
-      const gap = 10;
-      const right = h.right + gap + r.width <= window.innerWidth - 8;
-      setPos({
-        left: right ? h.right + gap : Math.max(8, h.left - gap - r.width),
-        top: Math.max(8, h.bottom - r.height),
-      });
+    const h = host.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const gap = 10;
+    const right = h.right + gap + r.width <= window.innerWidth - 8;
+    setPos({
+      left: right ? h.right + gap : Math.max(8, h.left - gap - r.width),
+      top: Math.max(8, h.bottom - r.height),
+      side: right ? 'right' : 'left',
+    });
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => (raf2 = requestAnimationFrame(() => setShown(true))));
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
     };
-    place();
-    // The panel may still be finishing its entrance; settle once it has.
-    const t = window.setTimeout(place, 180);
-    return () => window.clearTimeout(t);
-  }, []);
+  }, [mounted]);
+
+  if (!mounted) return null;
   return (
-    <div ref={ref} className="popover picker-pop pop-in" style={pos ?? { visibility: 'hidden' }} role="dialog" aria-label="Custom color">
+    <div
+      ref={ref}
+      className={`popover picker-pop${shown && open ? ' shown' : ''}${pos?.side === 'left' ? ' from-left' : ''}`}
+      style={pos ? { left: pos.left, top: pos.top } : { visibility: 'hidden' }}
+      role="dialog"
+      aria-label="Custom color"
+      onTransitionEnd={(e) => e.target === ref.current && e.propertyName === 'opacity' && !open && setMounted(false)}
+    >
       {children}
     </div>
   );
@@ -339,11 +359,9 @@ export function Dock(p: Props) {
               onKeyDown={(e) => e.stopPropagation()}
             />
           </div>
-          {pickerOpen && (
-            <PickerPopup>
-              <ColorPicker value={p.active.bgColor} onChange={(c) => p.onBackground({ bgColor: c })} showHex={false} />
-            </PickerPopup>
-          )}
+          <PickerPopup open={pickerOpen}>
+            <ColorPicker value={p.active.bgColor} onChange={(c) => p.onBackground({ bgColor: c })} showHex={false} />
+          </PickerPopup>
         </Popover>
       )}
 

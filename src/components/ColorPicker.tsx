@@ -52,14 +52,30 @@ function useDrag(onMove: (x: number, y: number) => void) {
     const r = ref.current!.getBoundingClientRect();
     cb.current(clamp01((e.clientX - r.left) / r.width), clamp01((e.clientY - r.top) / r.height));
   };
+  const end = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    delete document.documentElement.dataset.colorDragging;
+    onEnd.current?.();
+  };
+  const onEnd = useRef<(() => void) | undefined>(undefined);
   return {
     ref,
-    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
-      e.currentTarget.setPointerCapture(e.pointerId);
-      handle(e);
-    },
-    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
-      if (e.currentTarget.hasPointerCapture(e.pointerId)) handle(e);
+    onEnd,
+    props: {
+      ref,
+      onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        // Lets CSS drop fades on anything that follows the color, so it tracks the pointer exactly.
+        document.documentElement.dataset.colorDragging = '';
+        handle(e);
+      },
+      onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) handle(e);
+      },
+      onPointerUp: end,
+      onPointerCancel: end,
     },
   };
 }
@@ -79,9 +95,27 @@ export function ColorPicker({
   showHex?: boolean;
 }) {
   // Keep HSV locally so hue survives greys/black, where hex alone loses it.
-  const [hsv, setHsv] = useState<HSV>(() => hexToHsv(value));
+  const [hsv, setHsvState] = useState<HSV>(() => hexToHsv(value));
+  const hsvRef = useRef(hsv);
+  const setHsv = (v: HSV) => {
+    hsvRef.current = v;
+    setHsvState(v);
+  };
   const [hex, setHex] = useState(value);
   const last = useRef(value);
+  // The picker itself redraws on every move; the app (canvas, save) updates once per frame.
+  const pending = useRef<string | null>(null);
+  const raf = useRef(0);
+  const flush = () => {
+    cancelAnimationFrame(raf.current);
+    raf.current = 0;
+    if (pending.current !== null) {
+      const out = pending.current;
+      pending.current = null;
+      onChange(out);
+    }
+  };
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
 
   useEffect(() => {
     if (value.toUpperCase() !== last.current.toUpperCase()) {
@@ -96,11 +130,14 @@ export function ColorPicker({
     const out = hsvToHex(next);
     last.current = out;
     setHex(out);
-    onChange(out);
+    pending.current = out;
+    if (!raf.current) raf.current = requestAnimationFrame(flush);
   };
 
-  const field = useDrag((x, y) => commit({ ...hsv, s: x, v: 1 - y }));
-  const hue = useDrag((x) => commit({ ...hsv, h: Math.min(359.9, x * 360) }));
+  const field = useDrag((x, y) => commit({ ...hsvRef.current, s: x, v: 1 - y }));
+  const hue = useDrag((x) => commit({ ...hsvRef.current, h: Math.min(359.9, x * 360) }));
+  field.onEnd.current = flush;
+  hue.onEnd.current = flush;
 
   const keyNudge = (e: React.KeyboardEvent, which: 'field' | 'hue') => {
     const step = e.shiftKey ? 0.1 : 0.01;
@@ -108,8 +145,8 @@ export function ColorPicker({
     if (!d) return;
     e.preventDefault();
     e.stopPropagation();
-    if (which === 'hue') commit({ ...hsv, h: Math.min(359.9, Math.max(0, hsv.h + (d[0] || d[1]) * 360)) });
-    else commit({ ...hsv, s: clamp01(hsv.s + d[0]), v: clamp01(hsv.v + d[1]) });
+    if (which === 'hue') commit({ ...hsvRef.current, h: Math.min(359.9, Math.max(0, hsvRef.current.h + (d[0] || d[1]) * 360)) });
+    else commit({ ...hsvRef.current, s: clamp01(hsvRef.current.s + d[0]), v: clamp01(hsvRef.current.v + d[1]) });
   };
 
   const Dropper = (window as unknown as { EyeDropper?: EyeDropperCtor }).EyeDropper;
@@ -118,7 +155,7 @@ export function ColorPicker({
   return (
     <div className="cp">
       <div
-        {...field}
+        {...field.props}
         className="cp-field"
         style={{ backgroundColor: pureHue }}
         role="slider"
@@ -149,7 +186,7 @@ export function ColorPicker({
           </button>
         )}
         <div
-          {...hue}
+          {...hue.props}
           className="cp-hue"
           role="slider"
           tabIndex={0}

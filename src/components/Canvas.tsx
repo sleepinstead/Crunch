@@ -1334,14 +1334,40 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         {selected.length > 0 &&
           !marquee &&
           (() => {
-            const b = boundsOf(selected)!;
             const one = selected.length === 1 ? selected[0] : null;
-            const w = one ? one.w : b.w;
-            const h = one ? one.h : b.h;
+            let x: number, y: number, deg = 0, w: number, h: number;
+            if (one) {
+              // Like Figma: pinned under the image's own bottom edge and turned with it.
+              // Past ±90° use the opposite edge so the text never reads upside down.
+              deg = one.rotation ?? 0;
+              let side = 1;
+              if (Math.abs(deg) > 90) {
+                deg = deg > 0 ? deg - 180 : deg + 180;
+                side = -1;
+              }
+              const t = (one.rotation ?? 0) * RAD;
+              const cx = one.x + one.w / 2;
+              const cy = one.y + one.h / 2;
+              const oy = (side * one.h) / 2;
+              x = cx - oy * Math.sin(t);
+              y = cy + oy * Math.cos(t);
+              w = one.w;
+              h = one.h;
+            } else {
+              const b = boundsOf(selected)!;
+              x = b.x + b.w / 2;
+              y = b.y + b.h;
+              w = b.w;
+              h = b.h;
+            }
             return (
               <div
                 className="size-label"
-                style={{ left: (b.x + b.w / 2) * view.zoom + view.x, top: (b.y + b.h) * view.zoom + view.y + 8 }}
+                style={{
+                  left: x * view.zoom + view.x,
+                  top: y * view.zoom + view.y,
+                  transform: `rotate(${deg}deg) translate(-50%, 8px)`,
+                }}
               >
                 {Math.round(w)} × {Math.round(h)}
               </div>

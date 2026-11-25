@@ -272,7 +272,7 @@ svg {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  transform: translateX(-50%);
+  transform-origin: 0 0;
   pointer-events: none;
 }
 

@@ -9,7 +9,8 @@ const PORT = Number(process.env.PORT ?? 3210);
 const HOST = process.env.HOST ?? '127.0.0.1';
 const PROD = process.env.NODE_ENV === 'production';
 const TOKEN = process.env.CRUNCH_TOKEN || undefined;
-const DATA_DIR = path.resolve(process.env.CRUNCH_DATA_DIR ?? path.join(PROJECT_ROOT, 'data'));
+// The library lives at the repository root (data/), shared by the web app and, later, the Mac app.
+const DATA_DIR = path.resolve(process.env.CRUNCH_DATA_DIR ?? path.join(PROJECT_ROOT, '..', 'data'));
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
 if (!LOOPBACK.has(HOST) && !TOKEN) {

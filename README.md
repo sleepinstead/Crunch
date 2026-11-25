@@ -23,11 +23,18 @@ Crunch keeps the originals in a folder you control and gives you a proper canvas
 - **Recently deleted.** Deleted images and notes wait there until you restore them or clear them out.
 - **Export and import.** Save your whole library as a single `.crunch` file and bring it back on any machine.
 
+## Project layout
+
+- `web/` the web app: the canvas (React) and its local server (Node)
+- `mac/` the Mac app (coming next)
+- `data/` your library, shared by both: boards, images and backups (never committed)
+
 ## Getting started
 
 You need Node.js 22.18 or newer.
 
 ```bash
+cd web
 npm ci
 npm run dev
 ```
@@ -62,7 +69,7 @@ Double-click a board tab to rename it, drag to reorder, right-click to delete.
 
 ## Where your files live
 
-Everything is saved in the `data` folder inside the project:
+Everything is saved in the `data` folder at the top of the project:
 
 - `crunch.db` holds your boards, layers and settings.
 - `images/` holds the image files themselves. The same image added twice is only stored once.

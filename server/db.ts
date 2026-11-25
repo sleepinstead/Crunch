@@ -61,6 +61,21 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS items_project ON items(project_id);
 
+  -- Images removed from a canvas (or whose project was deleted). Restorable.
+  CREATE TABLE IF NOT EXISTS trash (
+    id           TEXT PRIMARY KEY,
+    project_id   TEXT NOT NULL,
+    project_name TEXT NOT NULL,
+    asset_id     TEXT NOT NULL REFERENCES assets(id),
+    x            REAL NOT NULL,
+    y            REAL NOT NULL,
+    w            REAL NOT NULL,
+    h            REAL NOT NULL,
+    z            REAL NOT NULL,
+    rotation     REAL NOT NULL DEFAULT 0,
+    deleted_at   INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

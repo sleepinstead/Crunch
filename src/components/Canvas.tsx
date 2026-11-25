@@ -7,6 +7,7 @@ import {
   CopyPlus,
   ExternalLink,
   Image as ImageIcon,
+  ImageOff,
   Link2,
   Maximize,
   RotateCcw,
@@ -47,6 +48,9 @@ type Mode =
       type: 'move';
       sx: number;
       sy: number;
+      wx: number;
+      wy: number;
+      origIds: string[];
       ids: string[];
       base: Record<string, Item>;
       before: Change;
@@ -73,6 +77,8 @@ interface Props {
   toast: (text: string, tone?: 'info' | 'error') => void;
   chrome: (api: CanvasApi, interacting: boolean) => ReactNode;
   settings: Settings;
+  /** Bumped by the parent when items changed elsewhere (e.g. restored from Recently deleted). */
+  reloadSignal?: number;
 }
 
 export const TAB_DRAG_TYPE = 'application/x-crunch-tab';
@@ -87,8 +93,20 @@ const DOCK_SPACE = 88;
 const isEditable = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 const modalOpen = () => !!document.querySelector('.scrim');
+/** Focus is inside settings, a popover or a menu: canvas shortcuts stay out of the way. */
+const inPanel = (t: EventTarget | null) => t instanceof Element && !!t.closest('.settings, .popover, .menu');
+const onControl = (t: EventTarget | null) =>
+  t instanceof Element && !!t.closest('button, a, [role="tab"], [role="switch"], [role="radio"]');
 
 const RAD = Math.PI / 180;
+
+/** Undo history per project, kept for the whole session (survives switching tabs). */
+const histories = new Map<string, { undo: Entry[]; redo: Entry[] }>();
+const historyFor = (id: string) => {
+  let h = histories.get(id);
+  if (!h) histories.set(id, (h = { undo: [], redo: [] }));
+  return h;
+};
 
 /** Axis-aligned box around a (possibly rotated) item. */
 function aabb(i: Rect & { rotation?: number }): Rect {
@@ -112,6 +130,34 @@ function boundsOf(items: (Rect & { rotation?: number })[]): Rect | null {
     y2 = Math.max(y2, i.y + i.h);
   }
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+/** Does the (possibly rotated) item actually overlap an axis-aligned rect? */
+function hitsRect(i: Item, r: Rect): boolean {
+  const a = aabb(i);
+  if (!(a.x < r.x + r.w && a.x + a.w > r.x && a.y < r.y + r.h && a.y + a.h > r.y)) return false;
+  if (!i.rotation) return true;
+  // Separating-axis test on the item's own two axes (the rect's axes were covered above).
+  const t = i.rotation * RAD;
+  const cx = i.x + i.w / 2;
+  const cy = i.y + i.h / 2;
+  const ux = [Math.cos(t), Math.sin(t)];
+  const uy = [-Math.sin(t), Math.cos(t)];
+  const pts = [
+    [r.x, r.y],
+    [r.x + r.w, r.y],
+    [r.x + r.w, r.y + r.h],
+    [r.x, r.y + r.h],
+  ];
+  for (const [ax, half] of [
+    [ux, i.w / 2],
+    [uy, i.h / 2],
+  ] as const) {
+    const c = cx * ax[0] + cy * ax[1];
+    const proj = pts.map(([x, y]) => x * ax[0] + y * ax[1]);
+    if (Math.max(...proj) < c - half || Math.min(...proj) > c + half) return false;
+  }
+  return true;
 }
 
 const normDeg = (d: number) => {
@@ -191,7 +237,7 @@ function avoidOverlap(rects: Rect[], existing: Rect[], zoom: number, gapPx = 20)
  * Background pattern in screen space: spacing and dot size never change with
  * zoom (only images scale), but it follows the canvas when you pan.
  */
-function backgroundStyle(project: Project, v: View): CSSProperties {
+function backgroundStyle(project: Project, v: { x: number; y: number }): CSSProperties {
   const style: CSSProperties = { backgroundColor: project.bgColor };
   if (project.pattern === 'plain') return style;
   const dark = isDark(project.bgColor);
@@ -216,6 +262,7 @@ function backgroundStyle(project: Project, v: View): CSSProperties {
 }
 
 const ItemView = memo(function ItemView({ item }: { item: Item }) {
+  const [broken, setBroken] = useState(false);
   return (
     <div
       className="item"
@@ -226,12 +273,19 @@ const ItemView = memo(function ItemView({ item }: { item: Item }) {
         height: item.h,
       }}
     >
-      <img src={item.src} alt="" draggable={false} decoding="async" />
+      {broken ? (
+        <div className="item-broken" title="The browser can’t display this file. It is still saved in your library.">
+          <ImageOff />
+          <span>Can’t display this image</span>
+        </div>
+      ) : (
+        <img src={item.src} alt="" draggable={false} decoding="async" onError={() => setBroken(true)} />
+      )}
     </div>
   );
 });
 
-export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props) {
+export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSignal }: Props) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -253,6 +307,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
 
   const [view, setViewState] = useState<View>(project.view);
   const viewRef = useRef(view);
+  // The pattern is screen-sized, so it follows pans only; zooming leaves it still.
+  const [bgOffset, setBgOffset] = useState({ x: project.view.x, y: project.view.y });
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<(Rect & { id: string })[]>([]);
   const [marquee, setMarquee] = useState<Rect | null>(null);
@@ -267,8 +323,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
   const mode = useRef<Mode | null>(null);
   const spaceRef = useRef(false);
   const pointer = useRef<{ x: number; y: number; inside: boolean }>({ x: 0, y: 0, inside: false });
-  const undoStack = useRef<Entry[]>([]);
-  const redoStack = useRef<Entry[]>([]);
+  const hist = useMemo(() => historyFor(project.id), [project.id]);
+  const lastNudge = useRef<{ key: string; t: number; entry: Entry } | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const saveTimer = useRef<number | undefined>(undefined);
   const anim = useRef<number | undefined>(undefined);
@@ -290,6 +346,12 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
 
   const setView = useCallback(
     (v: View) => {
+      const prev = viewRef.current;
+      if (v.zoom === prev.zoom) {
+        const dx = v.x - prev.x;
+        const dy = v.y - prev.y;
+        if (dx || dy) setBgOffset((o) => ({ x: o.x + dx, y: o.y + dy }));
+      }
       viewRef.current = v;
       setViewState(v);
       saveView(v);
@@ -387,7 +449,14 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     [animateTo],
   );
 
-  const zoomTo = useCallback((z: number) => zoomBy(z / viewRef.current.zoom), [zoomBy]);
+  /** Zoom to 100% returns to where the canvas started: origin centered on screen. */
+  const zoomTo = useCallback(
+    (zoom: number) => {
+      const { w, h } = size();
+      animateTo({ zoom: clampZoom(zoom), x: w / 2, y: (h - DOCK_SPACE) / 2 });
+    },
+    [animateTo],
+  );
 
   /* ---------- load ---------- */
 
@@ -397,7 +466,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       .listItems(project.id)
       .then((list) => {
         if (!alive) return;
-        setItems(Object.fromEntries(list.map((i) => [i.id, i])));
+        // Keep anything added while the canvas was still loading.
+        setItems({ ...Object.fromEntries(list.map((i) => [i.id, i])), ...itemsRef.current });
         const v = viewRef.current;
         // Fresh project: put the world origin in the middle of the screen.
         if (v.x === 0 && v.y === 0 && v.zoom === 1) {
@@ -419,15 +489,30 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
 
   /* ---------- changes, persistence, history ---------- */
 
+  // After a failed save, reload from the server so the screen never shows unsaved state.
+  const resync = useCallback(() => {
+    api
+      .listItems(project.id)
+      .then((list) => setItems(Object.fromEntries(list.map((i) => [i.id, i]))))
+      .catch(() => {});
+  }, [project.id]);
+
+  useEffect(() => {
+    if (reloadSignal) resync();
+  }, [reloadSignal, resync]);
+
   const persist = useCallback(
     (change: Change) => {
       const ups = Object.values(change).filter((i): i is Item => !!i);
       const dels = Object.keys(change).filter((id) => !change[id]);
-      const fail = (err: Error) => toast(`Couldn’t save: ${err.message}`, 'error');
+      const fail = (err: Error) => {
+        toast(`Couldn’t save: ${err.message}`, 'error');
+        resync();
+      };
       if (ups.length) queue.current = queue.current.then(() => api.upsertItems(ups)).catch(fail);
       if (dels.length) queue.current = queue.current.then(() => api.deleteItems(dels)).catch(fail);
     },
-    [toast],
+    [toast, resync],
   );
 
   const apply = useCallback(
@@ -445,18 +530,18 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
 
   const commit = useCallback(
     (before: Change, after: Change) => {
-      undoStack.current.push({ before, after });
-      if (undoStack.current.length > 200) undoStack.current.shift();
-      redoStack.current = [];
+      hist.undo.push({ before, after });
+      if (hist.undo.length > 200) hist.undo.shift();
+      hist.redo.length = 0;
       apply(after);
     },
-    [apply],
+    [apply, hist],
   );
 
   const travel = useCallback(
     (dir: 'undo' | 'redo') => {
-      const from = dir === 'undo' ? undoStack.current : redoStack.current;
-      const to = dir === 'undo' ? redoStack.current : undoStack.current;
+      const from = dir === 'undo' ? hist.undo : hist.redo;
+      const to = dir === 'undo' ? hist.redo : hist.undo;
       const entry = from.pop();
       if (!entry) return;
       to.push(entry);
@@ -464,7 +549,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       apply(target);
       setSelection(new Set(Object.keys(target).filter((id) => target[id])));
     },
-    [apply],
+    [apply, hist],
   );
 
   const maxZ = () => Object.values(itemsRef.current).reduce((m, i) => Math.max(m, i.z), 0);
@@ -522,12 +607,21 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       const sel = selectedItems();
       if (!sel.length) return;
       const k = 1 / viewRef.current.zoom;
-      commit(
-        Object.fromEntries(sel.map((i) => [i.id, i])),
-        Object.fromEntries(sel.map((i) => [i.id, { ...i, x: i.x + dx * k, y: i.y + dy * k }])),
-      );
+      const after: Change = Object.fromEntries(sel.map((i) => [i.id, { ...i, x: i.x + dx * k, y: i.y + dy * k }]));
+      // A run of nudges on the same selection is one undo step.
+      const key = sel.map((i) => i.id).join();
+      const now = performance.now();
+      const last = lastNudge.current;
+      if (last && last.key === key && now - last.t < 1000 && hist.undo[hist.undo.length - 1] === last.entry) {
+        last.entry.after = after;
+        last.t = now;
+        apply(after);
+        return;
+      }
+      commit(Object.fromEntries(sel.map((i) => [i.id, i])), after);
+      lastNudge.current = { key, t: now, entry: hist.undo[hist.undo.length - 1] };
     },
-    [commit],
+    [commit, apply, hist],
   );
 
   const copySelection = useCallback(async () => {
@@ -637,6 +731,35 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
     [commit, project.id, toast, fitRect, animateTo],
   );
 
+  /** Esc during a drag/resize/rotate/selection puts everything back. */
+  const cancelGesture = () => {
+    const m = mode.current;
+    if (!m) return false;
+    mode.current = null;
+    setInteracting(false);
+    setPanning(false);
+    setRotLabel(null);
+    if (m.type === 'move') {
+      if (m.moved) {
+        const next = { ...itemsRef.current };
+        for (const [id, it] of Object.entries(m.before)) {
+          if (it) next[id] = it;
+          else delete next[id];
+        }
+        setItems(next);
+      }
+      setSelection(new Set(m.origIds));
+    } else if (m.type === 'resize' || m.type === 'rotate') {
+      setItems({ ...itemsRef.current, [m.id]: m.before });
+    } else if (m.type === 'marquee') {
+      setMarquee(null);
+      setSelection(m.base);
+    } else if (m.type === 'pan') {
+      setView({ ...viewRef.current, x: m.vx, y: m.vy });
+    }
+    return true;
+  };
+
   const pointerWorld = () => (pointer.current.inside ? toWorld(pointer.current.x, pointer.current.y) : undefined);
 
   const pasteFromMenu = useCallback(
@@ -681,10 +804,16 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isEditable(e.target) || modalOpen()) return;
+      if (isEditable(e.target) || modalOpen() || inPanel(e.target)) return;
       const mod = e.metaKey || e.ctrlKey;
       const k = e.key.toLowerCase();
+      if (k === 'escape' && cancelGesture()) {
+        e.preventDefault();
+        return;
+      }
       if (e.code === 'Space') {
+        // Let a focused button or tab handle Space itself.
+        if (onControl(e.target)) return;
         e.preventDefault();
         if (!spaceRef.current) {
           spaceRef.current = true;
@@ -719,7 +848,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
         e.preventDefault();
         deleteSelection();
       } else if (k === 'escape') {
-        setSelection(new Set());
+        if (!document.querySelector('.settings.shown')) setSelection(new Set());
       } else if (e.shiftKey && e.code === 'Digit1') {
         zoomToFit();
       } else if (e.shiftKey && e.code === 'Digit0') {
@@ -863,10 +992,14 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       else if (sel.size > 1) reduceTo = id;
       setSelection(sel);
       const ids = [...sel].filter((i) => itemsRef.current[i]);
+      const pw = toWorld(e.clientX, e.clientY);
       mode.current = {
         type: 'move',
         sx: e.clientX,
         sy: e.clientY,
+        wx: pw.x,
+        wy: pw.y,
+        origIds: ids,
         ids,
         base: Object.fromEntries(ids.map((i) => [i, itemsRef.current[i]])),
         before: {},
@@ -919,8 +1052,10 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
           }
         }
       }
-      const dx = dsx / v.zoom;
-      const dy = dsy / v.zoom;
+      // Track the pointer in world space so zooming mid-drag doesn't make images jump.
+      const pw = toWorld(e.clientX, e.clientY);
+      const dx = pw.x - m.wx;
+      const dy = pw.y - m.wy;
       const next = { ...itemsRef.current };
       for (const id of m.ids) next[id] = { ...m.base[id], x: m.base[id].x + dx, y: m.base[id].y + dy };
       setItems(next);
@@ -962,10 +1097,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
       if (!marquee) setInteracting(true);
       setMarquee(rect);
       const hit = new Set(m.base);
-      for (const item of Object.values(itemsRef.current)) {
-        const it = aabb(item);
-        if (it.x < rect.x + rect.w && it.x + it.w > rect.x && it.y < rect.y + rect.h && it.y + it.h > rect.y) hit.add(item.id);
-      }
+      for (const item of Object.values(itemsRef.current)) if (hitsRect(item, rect)) hit.add(item.id);
       setSelection(hit);
     }
   };
@@ -1108,7 +1240,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings }: Props)
         ref={rootRef}
         className="canvas"
         data-tone={dark ? 'dark' : 'light'}
-        style={{ ...backgroundStyle(project, view), cursor }}
+        style={{ ...backgroundStyle(project, bgOffset), cursor }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={endPointer}

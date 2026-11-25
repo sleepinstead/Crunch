@@ -14,6 +14,25 @@ const PROD = process.env.NODE_ENV === 'production';
 const app = express();
 app.disable('x-powered-by');
 
+/* ---------- request guards ---------- */
+
+// Only answer requests addressed to this machine (blocks DNS-rebinding).
+// Add hostnames via CRUNCH_ALLOWED_HOSTS (comma-separated) to reach Crunch another way.
+const ALLOWED_HOSTS = new Set(
+  ['localhost', '127.0.0.1', '[::1]', ...(process.env.CRUNCH_ALLOWED_HOSTS ?? '').split(',')]
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean),
+);
+const hostname = (host: string) => host.toLowerCase().replace(/:\d+$/, '');
+
+app.use((req, res, next) => {
+  if (!ALLOWED_HOSTS.has(hostname(req.headers.host ?? ''))) {
+    res.status(403).json({ error: 'Host not allowed.' });
+    return;
+  }
+  next();
+});
+
 /* ---------- serialization ---------- */
 
 interface ProjectRow {
@@ -102,6 +121,29 @@ const num = (v: unknown, name: string) => {
 /* ---------- API ---------- */
 
 const api = express.Router();
+
+// Other websites must not be able to change anything (blocks cross-site requests).
+api.use((req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  const origin = req.get('origin');
+  const site = req.get('sec-fetch-site');
+  let ok = true;
+  if (origin) {
+    try {
+      ok = new URL(origin).host.toLowerCase() === (req.headers.host ?? '').toLowerCase();
+    } catch {
+      ok = false;
+    }
+  } else if (site) {
+    ok = site === 'same-origin' || site === 'none';
+  }
+  if (!ok) {
+    res.status(403).json({ error: 'Cross-site request blocked.' });
+    return;
+  }
+  next();
+});
+
 api.use(express.json({ limit: '4mb' }));
 
 api.get('/settings', (_req, res) => {
@@ -163,10 +205,114 @@ api.post('/projects/reorder', (req, res) => {
   res.json({ ok: true });
 });
 
-// Removes the canvas and its placements. Image files stay in storage.
+/* ---------- recently deleted ---------- */
+
+const trashItems = db.prepare(
+  `INSERT OR REPLACE INTO trash (id, project_id, project_name, asset_id, x, y, w, h, z, rotation, deleted_at)
+   SELECT i.id, i.project_id, p.name, i.asset_id, i.x, i.y, i.w, i.h, i.z, i.rotation, ?
+   FROM items i JOIN projects p ON p.id = i.project_id WHERE i.id = ?`,
+);
+
+// Removes the canvas. Its images move to Recently deleted.
 api.delete('/projects/:id', (req, res) => {
-  db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
+  tx(() => {
+    const ids = db.prepare('SELECT id FROM items WHERE project_id = ?').all(req.params.id) as { id: string }[];
+    const now = Date.now();
+    for (const { id } of ids) trashItems.run(now, id);
+    db.prepare('DELETE FROM projects WHERE id = ?').run(req.params.id);
+  });
   res.json({ ok: true });
+});
+
+api.get('/trash', (_req, res) => {
+  const rows = db
+    .prepare(
+      `SELECT t.id, t.project_id, t.project_name, t.deleted_at, a.file, a.width, a.height, a.source_url,
+              (SELECT 1 FROM projects p WHERE p.id = t.project_id) AS project_exists
+       FROM trash t JOIN assets a ON a.id = t.asset_id ORDER BY t.deleted_at DESC`,
+    )
+    .all() as {
+    id: string;
+    project_id: string;
+    project_name: string;
+    deleted_at: number;
+    file: string;
+    width: number;
+    height: number;
+    source_url: string | null;
+    project_exists: number | null;
+  }[];
+  res.json(
+    rows.map((r) => ({
+      id: r.id,
+      projectId: r.project_id,
+      projectName: r.project_name,
+      projectExists: !!r.project_exists,
+      deletedAt: r.deleted_at,
+      src: `/files/${r.file}`,
+      width: r.width,
+      height: r.height,
+      sourceUrl: r.source_url,
+    })),
+  );
+});
+
+// Put images back on their canvas (or onto `fallbackProjectId` if that project is gone).
+api.post('/trash/restore', (req, res) => {
+  const ids: unknown = req.body?.ids;
+  const fallback = String(req.body?.fallbackProjectId ?? '');
+  if (!Array.isArray(ids)) throw new HttpError(400, 'ids required.');
+  const restored: { id: string; projectId: string }[] = [];
+  tx(() => {
+    const get = db.prepare('SELECT * FROM trash WHERE id = ?');
+    const exists = db.prepare('SELECT 1 FROM projects WHERE id = ?');
+    const ins = db.prepare(
+      `INSERT OR REPLACE INTO items (id, project_id, asset_id, x, y, w, h, z, rotation, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const del = db.prepare('DELETE FROM trash WHERE id = ?');
+    const now = Date.now();
+    for (const id of ids) {
+      const t = get.get(String(id)) as
+        | { id: string; project_id: string; asset_id: string; x: number; y: number; w: number; h: number; z: number; rotation: number }
+        | undefined;
+      if (!t) continue;
+      const projectId = exists.get(t.project_id) ? t.project_id : fallback;
+      if (!exists.get(projectId)) throw new HttpError(409, 'No project to restore into.');
+      ins.run(t.id, projectId, t.asset_id, t.x, t.y, t.w, t.h, t.z, t.rotation, now, now);
+      del.run(t.id);
+      restored.push({ id: t.id, projectId });
+    }
+  });
+  res.json({ restored });
+});
+
+// Permanently delete. Image files are removed only when nothing else uses them.
+api.delete('/trash', (req, res) => {
+  const all = req.body?.all === true;
+  const ids: unknown = req.body?.ids;
+  if (!all && !Array.isArray(ids)) throw new HttpError(400, 'ids or all required.');
+  const files: string[] = [];
+  tx(() => {
+    const targets = all
+      ? (db.prepare('SELECT id, asset_id FROM trash').all() as { id: string; asset_id: string }[])
+      : (ids as unknown[])
+          .map((id) => db.prepare('SELECT id, asset_id FROM trash WHERE id = ?').get(String(id)) as { id: string; asset_id: string } | undefined)
+          .filter((t): t is { id: string; asset_id: string } => !!t);
+    const del = db.prepare('DELETE FROM trash WHERE id = ?');
+    for (const t of targets) del.run(t.id);
+    for (const assetId of new Set(targets.map((t) => t.asset_id))) {
+      const used =
+        db.prepare('SELECT 1 FROM items WHERE asset_id = ? LIMIT 1').get(assetId) ||
+        db.prepare('SELECT 1 FROM trash WHERE asset_id = ? LIMIT 1').get(assetId);
+      if (used) continue;
+      const a = db.prepare('SELECT file FROM assets WHERE id = ?').get(assetId) as { file: string } | undefined;
+      db.prepare('DELETE FROM assets WHERE id = ?').run(assetId);
+      if (a) files.push(a.file);
+    }
+  });
+  for (const f of files) fs.rmSync(path.join(IMAGES_DIR, f), { force: true });
+  res.json({ ok: true, filesRemoved: files.length });
 });
 
 api.get('/projects/:id/items', (req, res) => {
@@ -191,9 +337,11 @@ api.put('/items', (req, res) => {
      ON CONFLICT(id) DO UPDATE SET x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h,
        z = excluded.z, rotation = excluded.rotation, updated_at = excluded.updated_at`,
   );
+  const untrash = db.prepare('DELETE FROM trash WHERE id = ?');
   tx(() => {
     for (const it of list) {
       if (!it || typeof it.id !== 'string') throw new HttpError(400, 'Invalid item.');
+      untrash.run(it.id);
       stmt.run(
         it.id,
         String(it.projectId),
@@ -216,7 +364,13 @@ api.delete('/items', (req, res) => {
   const ids: unknown = req.body?.ids;
   if (!Array.isArray(ids)) throw new HttpError(400, 'ids required.');
   const stmt = db.prepare('DELETE FROM items WHERE id = ?');
-  tx(() => ids.forEach((id) => stmt.run(String(id))));
+  const now = Date.now();
+  tx(() =>
+    ids.forEach((id) => {
+      trashItems.run(now, String(id));
+      stmt.run(String(id));
+    }),
+  );
   res.json({ ok: true });
 });
 
@@ -241,6 +395,10 @@ api.post('/assets/url', async (req, res) => {
   const { buf, url: finalUrl } = await fetchImage(url);
   const source = url.startsWith('data:') ? null : finalUrl || url;
   res.status(201).json(assetJson(storeAsset(buf, source)));
+});
+
+api.use((_req, res) => {
+  res.status(404).json({ error: 'Not found.' });
 });
 
 app.use('/api', api);
@@ -274,13 +432,21 @@ if (PROD) {
 }
 
 app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
-  const status = err instanceof HttpError ? err.status : (err as { status?: number })?.status ?? 500;
+  const raw = String((err as Error)?.message ?? '');
+  const constraint = /constraint failed/i.test(raw);
+  const status = err instanceof HttpError ? err.status : constraint ? 409 : (err as { status?: number })?.status ?? 500;
   const message =
     err instanceof HttpError
       ? err.message
-      : status === 413
-        ? 'That file is too large.'
-        : String((err as Error)?.message ?? 'Something went wrong.');
+      : constraint
+        ? /FOREIGN KEY/i.test(raw)
+          ? 'That project or image no longer exists.'
+          : 'That change conflicts with saved data.'
+        : status === 413
+          ? 'That file is too large.'
+          : status >= 500
+            ? 'Something went wrong on the server.'
+            : raw || 'Something went wrong.';
   if (status >= 500) console.error(err);
   res.status(status).json({ error: message });
 });

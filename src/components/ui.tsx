@@ -2,7 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 're
 
 /* ---------- dismiss helpers ---------- */
 
-function useDismiss(ref: React.RefObject<HTMLElement | null>, onClose: () => void, ignore?: React.RefObject<HTMLElement | null>) {
+function useDismiss(
+  ref: React.RefObject<HTMLElement | null>,
+  onClose: () => void,
+  ignore?: React.RefObject<HTMLElement | null>,
+  closeOnBlur = true,
+) {
   useEffect(() => {
     const down = (e: PointerEvent) => {
       const t = e.target as Node;
@@ -17,13 +22,13 @@ function useDismiss(ref: React.RefObject<HTMLElement | null>, onClose: () => voi
     };
     window.addEventListener('pointerdown', down, true);
     window.addEventListener('keydown', key, true);
-    window.addEventListener('blur', onClose);
+    if (closeOnBlur) window.addEventListener('blur', onClose);
     return () => {
       window.removeEventListener('pointerdown', down, true);
       window.removeEventListener('keydown', key, true);
       window.removeEventListener('blur', onClose);
     };
-  }, [ref, ignore, onClose]);
+  }, [ref, ignore, onClose, closeOnBlur]);
 }
 
 /** Keep a fixed-position element inside the viewport. */
@@ -102,15 +107,23 @@ export function Popover({
   const ref = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<HTMLElement>(anchor);
   anchorRef.current = anchor;
-  useDismiss(ref, onClose, anchorRef);
+  // Stay open on window blur: the system color picker takes focus while in use.
+  useDismiss(ref, onClose, anchorRef, false);
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const a = anchor.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    const left = Math.max(8, Math.min(a.left + a.width / 2 - r.width / 2, window.innerWidth - r.width - 8));
-    setPos({ left, top: a.top - r.height - 10 });
+    const place = () => {
+      const a = anchor.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      const left = Math.max(8, Math.min(a.left + a.width / 2 - r.width / 2, window.innerWidth - r.width - 8));
+      setPos({ left, top: Math.max(8, a.top - r.height - 10) });
+    };
+    place();
+    // Re-anchor when the content changes size (e.g. a section expands).
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, [anchor]);
   return (
     <div ref={ref} className={`popover pop-in ${className}`} style={pos ?? { visibility: 'hidden' }}>

@@ -68,7 +68,24 @@ export interface Stats {
   imagesDir: string;
 }
 
+export interface TrashItem {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectExists: boolean;
+  deletedAt: number;
+  src: string;
+  width: number;
+  height: number;
+  sourceUrl: string | null;
+}
+
 export const api = {
+  listTrash: () => req<TrashItem[]>('GET', '/api/trash'),
+  restoreTrash: (ids: string[], fallbackProjectId: string) =>
+    req<{ restored: { id: string; projectId: string }[] }>('POST', '/api/trash/restore', { ids, fallbackProjectId }),
+  purgeTrash: (target: { ids: string[] } | { all: true }) => req<{ filesRemoved: number }>('DELETE', '/api/trash', target),
+
   getSettings: () => req<Record<string, unknown>>('GET', '/api/settings'),
   updateSettings: (patch: Record<string, unknown>) => req<Record<string, unknown>>('PATCH', '/api/settings', patch),
   stats: () => req<Stats>('GET', '/api/stats'),

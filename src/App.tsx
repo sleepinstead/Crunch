@@ -5,6 +5,7 @@ import { Canvas } from './components/Canvas';
 import { Dock } from './components/Dock';
 import { ConfirmDialog, Dialog, Toasts, type ToastMsg } from './components/ui';
 import { SettingsPanel } from './components/SettingsPanel';
+import { TrashPanel } from './components/TrashPanel';
 import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from './settings';
 
 const ACTIVE_KEY = 'crunch.activeProject';
@@ -56,7 +57,10 @@ export function App() {
   const [confirmDelete, setConfirmDelete] = useState<Project | null>(null);
   const [showKeys, setShowKeys] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [panel, setPanel] = useState<'settings' | 'trash' | null>(null);
+  const [reloadSignal, setReloadSignal] = useState(0);
+  const settingsOpen = panel === 'settings';
+  const togglePanel = (which: 'settings' | 'trash') => setPanel((p) => (p === which ? null : which));
   const toastId = useRef(0);
 
   const toast = useCallback((text: string, tone: 'info' | 'error' = 'info') => {
@@ -89,11 +93,28 @@ export function App() {
     },
     [toast],
   );
-  const closeSettings = useCallback(() => setSettingsOpen(false), []);
+  const closePanel = useCallback(() => setPanel(null), []);
 
   useEffect(() => {
     if (activeId) store.set(ACTIVE_KEY, activeId);
   }, [activeId]);
+
+  // Pinch / ⌘-scroll anywhere outside the canvas (dock, settings, popovers) must not zoom the
+  // whole page. The canvas handles its own zoom.
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !(e.target as Element | null)?.closest?.('.canvas')) e.preventDefault();
+    };
+    const onGesture = (e: Event) => e.preventDefault(); // Safari pinch
+    window.addEventListener('wheel', onWheel, { passive: false });
+    document.addEventListener('gesturestart', onGesture);
+    document.addEventListener('gesturechange', onGesture);
+    return () => {
+      window.removeEventListener('wheel', onWheel);
+      document.removeEventListener('gesturestart', onGesture);
+      document.removeEventListener('gesturechange', onGesture);
+    };
+  }, []);
 
   // Never let the browser navigate away when something is dropped outside the canvas.
   useEffect(() => {
@@ -110,10 +131,19 @@ export function App() {
     setProjects((ps) => ps && ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }, []);
 
+  // Changes apply instantly; the server write is batched per project (color dragging fires many).
+  const pendingSave = useRef(new Map<string, { patch: Partial<Project>; timer: number }>());
   const save = useCallback(
     (id: string, patch: Partial<Pick<Project, 'name' | 'pattern' | 'bgColor' | 'density'>>) => {
       patchLocal(id, patch);
-      api.updateProject(id, patch).catch((err) => toast(`Couldn’t save: ${err.message}`, 'error'));
+      const prev = pendingSave.current.get(id);
+      if (prev) window.clearTimeout(prev.timer);
+      const merged = { ...prev?.patch, ...patch };
+      const timer = window.setTimeout(() => {
+        pendingSave.current.delete(id);
+        api.updateProject(id, merged).catch((err) => toast(`Couldn’t save: ${err.message}`, 'error'));
+      }, 250);
+      pendingSave.current.set(id, { patch: merged, timer });
     },
     [patchLocal, toast],
   );
@@ -163,7 +193,7 @@ export function App() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
-        setSettingsOpen((o) => !o);
+        setPanel((p) => (p === 'settings' ? null : 'settings'));
         return;
       }
       const t = e.target as HTMLElement;
@@ -202,6 +232,7 @@ export function App() {
           onViewSaved={onViewSaved}
           toast={toast}
           settings={settings}
+          reloadSignal={reloadSignal}
           chrome={(canvas, interacting) => (
             <Dock
               projects={projects}
@@ -216,7 +247,9 @@ export function App() {
               onBackground={(patch) => save(active.id, patch)}
               onShowKeys={() => setShowKeys(true)}
               settingsOpen={settingsOpen}
-              onToggleSettings={() => setSettingsOpen((o) => !o)}
+              onToggleSettings={() => togglePanel('settings')}
+              trashOpen={panel === 'trash'}
+              onToggleTrash={() => togglePanel('trash')}
               canvas={canvas}
               quiet={interacting && settings.fadeDock}
             />
@@ -224,12 +257,26 @@ export function App() {
         />
       )}
       {settings.showName && <div className="brand">Crunch</div>}
-      <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closeSettings} />
+      <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closePanel} />
+      <TrashPanel
+        open={panel === 'trash'}
+        activeProjectId={activeId}
+        toast={toast}
+        onClose={closePanel}
+        onRestored={(restored) => {
+          if (restored.some((r) => r.projectId === activeId)) setReloadSignal((n) => n + 1);
+          const elsewhere = restored.find((r) => r.projectId !== activeId);
+          if (elsewhere) {
+            const name = projects?.find((p) => p.id === elsewhere.projectId)?.name;
+            if (name) toast(`Restored to “${name}”`);
+          }
+        }}
+      />
       <Toasts toasts={toasts} />
       {confirmDelete && (
         <ConfirmDialog
           title={`Delete “${confirmDelete.name}”?`}
-          text="This removes the project and its canvas. Image files stay in your local library folder."
+          text="This removes the project and its canvas. Its images move to Recently deleted."
           confirmLabel="Delete project"
           onConfirm={() => remove(confirmDelete)}
           onClose={() => setConfirmDelete(null)}

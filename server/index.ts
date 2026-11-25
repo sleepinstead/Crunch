@@ -65,6 +65,12 @@ interface ItemRow {
   text: string | null;
   font_size: number | null;
   color: string | null;
+  group_id: string | null;
+  name: string | null;
+  locked: number;
+  hidden: number;
+  opacity: number;
+  font_weight: number | null;
   x: number;
   y: number;
   w: number;
@@ -85,6 +91,12 @@ const itemJson = (i: ItemRow) => ({
   text: i.text,
   fontSize: i.font_size,
   color: i.color,
+  groupId: i.group_id,
+  name: i.name,
+  locked: !!i.locked,
+  hidden: !!i.hidden,
+  opacity: i.opacity ?? 1,
+  fontWeight: i.font_weight,
   x: i.x,
   y: i.y,
   w: i.w,
@@ -340,11 +352,14 @@ api.put('/items', (req, res) => {
   if (!Array.isArray(list)) throw new HttpError(400, 'Expected an array of items.');
   const now = Date.now();
   const stmt = db.prepare(
-    `INSERT INTO items (id, project_id, kind, asset_id, text, font_size, color, x, y, w, h, z, rotation, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO items (id, project_id, kind, asset_id, text, font_size, color, x, y, w, h, z, rotation,
+       group_id, name, locked, hidden, opacity, font_weight, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h,
        z = excluded.z, rotation = excluded.rotation, text = excluded.text, font_size = excluded.font_size,
-       color = excluded.color, updated_at = excluded.updated_at`,
+       color = excluded.color, group_id = excluded.group_id, name = excluded.name, locked = excluded.locked,
+       hidden = excluded.hidden, opacity = excluded.opacity, font_weight = excluded.font_weight,
+       updated_at = excluded.updated_at`,
   );
   const untrash = db.prepare('DELETE FROM trash WHERE id = ?');
   tx(() => {
@@ -368,6 +383,12 @@ api.put('/items', (req, res) => {
         num(it.h, 'h'),
         num(it.z, 'z'),
         it.rotation === undefined ? 0 : num(it.rotation, 'rotation'),
+        typeof it.groupId === 'string' && it.groupId ? it.groupId : null,
+        typeof it.name === 'string' && it.name.trim() ? it.name.trim().slice(0, 200) : null,
+        it.locked ? 1 : 0,
+        it.hidden ? 1 : 0,
+        typeof it.opacity === 'number' ? Math.min(1, Math.max(0, it.opacity)) : 1,
+        isText && [300, 400, 500, 600, 700].includes(it.fontWeight) ? it.fontWeight : null,
         now,
         now,
       );
@@ -387,6 +408,29 @@ api.delete('/items', (req, res) => {
       stmt.run(String(id));
     }),
   );
+  res.json({ ok: true });
+});
+
+/* ---------- groups ---------- */
+
+api.get('/projects/:id/groups', (req, res) => {
+  const rows = db.prepare('SELECT id, name FROM groups WHERE project_id = ?').all(req.params.id);
+  res.json(rows);
+});
+
+api.put('/groups', (req, res) => {
+  const list: unknown = req.body;
+  if (!Array.isArray(list)) throw new HttpError(400, 'Expected an array of groups.');
+  const stmt = db.prepare(
+    `INSERT INTO groups (id, project_id, name, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET name = excluded.name`,
+  );
+  tx(() => {
+    for (const g of list) {
+      if (!g || typeof g.id !== 'string') throw new HttpError(400, 'Invalid group.');
+      stmt.run(g.id, String(g.projectId), String(g.name ?? 'Group').trim().slice(0, 200) || 'Group', Date.now());
+    }
+  });
   res.json({ ok: true });
 });
 

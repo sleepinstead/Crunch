@@ -35,6 +35,13 @@ export interface Item {
   fontSize?: number | null;
   /** null = follow the canvas (light text on dark backgrounds, dark on light). */
   color?: string | null;
+  fontWeight?: number | null;
+  /** Layer properties. */
+  groupId?: string | null;
+  name?: string | null;
+  locked?: boolean;
+  hidden?: boolean;
+  opacity?: number;
   x: number;
   y: number;
   w: number;
@@ -74,6 +81,11 @@ export interface Stats {
   imagesDir: string;
 }
 
+export interface Group {
+  id: string;
+  name: string;
+}
+
 export interface TrashItem {
   id: string;
   projectId: string;
@@ -104,6 +116,8 @@ export const api = {
   deleteProject: (id: string) => req('DELETE', `/api/projects/${id}`),
 
   listItems: (projectId: string) => req<Item[]>('GET', `/api/projects/${projectId}/items`),
+  listGroups: (projectId: string) => req<Group[]>('GET', `/api/projects/${projectId}/groups`),
+  saveGroups: (groups: (Group & { projectId: string })[]) => req('PUT', '/api/groups', groups),
   upsertItems: (items: Item[]) => req('PUT', '/api/items', items),
   deleteItems: (ids: string[]) => req('DELETE', '/api/items', { ids }),
 

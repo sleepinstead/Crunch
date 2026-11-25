@@ -76,6 +76,14 @@ db.exec(`
     deleted_at   INTEGER NOT NULL
   );
 
+  -- Named groups of items on a canvas (items point here via group_id).
+  CREATE TABLE IF NOT EXISTS groups (
+    id         TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -122,6 +130,20 @@ if (!itemCols.includes('kind')) {
     COMMIT;
     PRAGMA foreign_keys = ON;
   `);
+}
+
+// Layer properties (all optional / defaulted, so a plain ALTER is enough).
+{
+  const cols = (db.prepare('PRAGMA table_info(items)').all() as { name: string }[]).map((c) => c.name);
+  const add: [string, string][] = [
+    ['group_id', 'TEXT'],
+    ['name', 'TEXT'],
+    ['locked', 'INTEGER NOT NULL DEFAULT 0'],
+    ['hidden', 'INTEGER NOT NULL DEFAULT 0'],
+    ['opacity', 'REAL NOT NULL DEFAULT 1'],
+    ['font_weight', 'INTEGER'],
+  ];
+  for (const [c, type] of add) if (!cols.includes(c)) db.exec(`ALTER TABLE items ADD COLUMN ${c} ${type}`);
 }
 
 export function tx<T>(fn: () => T): T {

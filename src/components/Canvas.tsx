@@ -20,6 +20,8 @@ import {
 import { api, type Asset, type Item, type Project, type View } from '../api';
 import { CRUNCH_ASSET_ATTR, hostOf, readClipboard, readTransfer, resolveSource, type Source } from '../ingest';
 import { isDark } from '../color';
+import { aabb, align, boundsOf, distribute, guidesFor, snapEdge, snapMove, type AlignMode, type GapMark, type Guide, type Rect } from '../geometry';
+import { Sidebar } from './Sidebar';
 import { GAP_PX, SIZE_SCALE, type Settings } from '../settings';
 import { Menu, UrlDialog, type MenuEntry } from './ui';
 
@@ -37,12 +39,6 @@ interface Entry {
   before: Change;
   after: Change;
 }
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
 type Corner = 'nw' | 'ne' | 'sw' | 'se';
 
 type Mode =
@@ -59,7 +55,7 @@ type Mode =
       before: Change;
       moved: boolean;
       alt: boolean;
-      reduceTo: string | null;
+      reduceTo: string[] | null;
     }
   | {
       type: 'resize';
@@ -122,29 +118,6 @@ const historyFor = (id: string) => {
 };
 
 /** Axis-aligned box around a (possibly rotated) item. */
-function aabb(i: Rect & { rotation?: number }): Rect {
-  const r = (i.rotation ?? 0) * RAD;
-  if (!r) return { x: i.x, y: i.y, w: i.w, h: i.h };
-  const c = Math.abs(Math.cos(r));
-  const s = Math.abs(Math.sin(r));
-  const w = i.w * c + i.h * s;
-  const h = i.w * s + i.h * c;
-  return { x: i.x + i.w / 2 - w / 2, y: i.y + i.h / 2 - h / 2, w, h };
-}
-
-function boundsOf(items: (Rect & { rotation?: number })[]): Rect | null {
-  if (!items.length) return null;
-  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-  for (const it of items) {
-    const i = aabb(it);
-    x1 = Math.min(x1, i.x);
-    y1 = Math.min(y1, i.y);
-    x2 = Math.max(x2, i.x + i.w);
-    y2 = Math.max(y2, i.y + i.h);
-  }
-  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
-}
-
 /** Does the (possibly rotated) item actually overlap an axis-aligned rect? */
 function hitsRect(i: Item, r: Rect): boolean {
   const a = aabb(i);
@@ -278,12 +251,13 @@ const ItemView = memo(function ItemView({ item }: { item: Item }) {
   const [broken, setBroken] = useState(false);
   return (
     <div
-      className="item"
+      className={`item${item.locked ? ' locked' : ''}`}
       data-item-id={item.id}
       style={{
         transform: `translate(${item.x}px, ${item.y}px)${item.rotation ? ` rotate(${item.rotation}deg)` : ''}`,
         width: item.w,
         height: item.h,
+        opacity: item.opacity ?? 1,
       }}
     >
       {broken ? (
@@ -354,11 +328,13 @@ const TextView = memo(function TextView({
 
   return (
     <div
-      className={`item text${editing ? ' editing' : ''}`}
+      className={`item text${editing ? ' editing' : ''}${item.locked ? ' locked' : ''}`}
       data-item-id={item.id}
       style={{
         transform: `translate(${item.x}px, ${item.y}px)${item.rotation ? ` rotate(${item.rotation}deg)` : ''}`,
         fontSize: item.fontSize ?? 24,
+        fontWeight: item.fontWeight ?? 500,
+        opacity: item.opacity ?? 1,
         color: item.color ?? (dark ? '#EDEDEC' : '#191919'),
       }}
     >
@@ -431,6 +407,28 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const [dragOver, setDragOver] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; kind: 'canvas' | 'item'; world: { x: number; y: number } } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [groups, setGroupsState] = useState<Record<string, string>>({});
+  const groupsRef = useRef(groups);
+  const [snapLines, setSnapLines] = useState<{ guides: Guide[]; gaps: GapMark[] } | null>(null);
+  const snapOthers = useRef<Rect[] | null>(null);
+  const preview = useRef<Change | null>(null);
+  const [sidebar, setSidebarState] = useState<{ open: boolean; tab: 'layers' | 'design' }>(() => {
+    try {
+      return { open: false, tab: 'layers', ...JSON.parse(localStorage.getItem('crunch.sidebar') ?? '{}') };
+    } catch {
+      return { open: false, tab: 'layers' };
+    }
+  });
+  const sidebarRef = useRef(sidebar);
+  sidebarRef.current = sidebar;
+  const setSidebar = (next: { open: boolean; tab: 'layers' | 'design' }) => {
+    setSidebarState(next);
+    try {
+      localStorage.setItem('crunch.sidebar', JSON.stringify(next));
+    } catch {
+      /* ignore */
+    }
+  };
   const [textTool, setTextToolState] = useState(false);
   const textToolRef = useRef(false);
   const setTextTool = (on: boolean) => {
@@ -588,6 +586,13 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       .listItems(project.id)
       .then((list) => {
         if (!alive) return;
+        api
+          .listGroups(project.id)
+          .then((gs) => {
+            groupsRef.current = Object.fromEntries(gs.map((g) => [g.id, g.name]));
+            setGroupsState(groupsRef.current);
+          })
+          .catch(() => {});
         // Keep anything added while the canvas was still loading.
         setItems({ ...Object.fromEntries(list.map((i) => [i.id, i])), ...itemsRef.current });
         const v = viewRef.current;
@@ -681,6 +686,123 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       .filter(Boolean)
       .sort((a, b) => a.z - b.z);
 
+  /** Expand ids to whole groups (clicking a grouped item picks its group, like Figma). */
+  const withGroups = (ids: Iterable<string>) => {
+    const all = itemsRef.current;
+    const out = new Set(ids);
+    const gids = new Set([...out].map((id) => all[id]?.groupId).filter(Boolean) as string[]);
+    if (gids.size) for (const it of Object.values(all)) if (it.groupId && gids.has(it.groupId)) out.add(it.id);
+    return out;
+  };
+  const selectable = (it: Item) => !it.locked && !it.hidden;
+
+  const saveGroup = useCallback(
+    (id: string, name: string) => {
+      groupsRef.current = { ...groupsRef.current, [id]: name };
+      setGroupsState(groupsRef.current);
+      api.saveGroups([{ id, name, projectId: project.id }]).catch((err) => toast(err.message, 'error'));
+    },
+    [project.id, toast],
+  );
+
+  /** Copies of a whole group become a new group; copies of part of a group stay in it. */
+  const remapGroups = (copies: Item[], originals: Item[]) => {
+    const count = (list: Item[], g: string) => list.filter((i) => i.groupId === g).length;
+    const all = Object.values(itemsRef.current);
+    const map = new Map<string, string>();
+    return copies.map((c) => {
+      const g = c.groupId;
+      if (!g || count(originals, g) < count(all, g)) return c;
+      let ng = map.get(g);
+      if (!ng) {
+        ng = uid();
+        map.set(g, ng);
+        saveGroup(ng, `${groupsRef.current[g] ?? 'Group'} copy`);
+      }
+      return { ...c, groupId: ng };
+    });
+  };
+
+  /** Apply a change to some items as one undo step. */
+  const patchItems = useCallback(
+    (ids: string[], fn: (it: Item) => Item) => {
+      const cur = ids.map((id) => itemsRef.current[id]).filter(Boolean);
+      if (!cur.length) return;
+      commit(Object.fromEntries(cur.map((i) => [i.id, i])), Object.fromEntries(cur.map((i) => [i.id, fn(i)])));
+    },
+    [commit],
+  );
+
+  /** Live edits (e.g. scrubbing a number) shown without saving, then committed once. */
+  const previewItems = (ids: string[], fn: (it: Item) => Item) => {
+    const base = preview.current ?? Object.fromEntries(ids.map((id) => [id, itemsRef.current[id]]));
+    preview.current = base;
+    const next = { ...itemsRef.current };
+    for (const id of ids) if (base[id]) next[id] = fn(base[id]!);
+    setItems(next);
+  };
+  const endPreview = useCallback(() => {
+    const base = preview.current;
+    preview.current = null;
+    if (!base) return;
+    commit(base, Object.fromEntries(Object.keys(base).map((id) => [id, itemsRef.current[id]])));
+  }, [commit]);
+
+  const alignSelection = useCallback(
+    (mode: AlignMode | 'dx' | 'dy') => {
+      const sel = selectedItems();
+      const out = mode === 'dx' ? distribute(sel, 'x') : mode === 'dy' ? distribute(sel, 'y') : align(sel, mode);
+      commit(Object.fromEntries(sel.map((i) => [i.id, i])), Object.fromEntries(out.map((i) => [i.id, i])));
+    },
+    [commit],
+  );
+
+  const groupSelection = useCallback(() => {
+    const sel = selectedItems();
+    if (sel.length < 2) return;
+    const gid = uid();
+    saveGroup(gid, `Group ${Object.keys(groupsRef.current).length + 1}`);
+    commit(Object.fromEntries(sel.map((i) => [i.id, i])), Object.fromEntries(sel.map((i) => [i.id, { ...i, groupId: gid }])));
+  }, [commit, saveGroup]);
+
+  const ungroupSelection = useCallback(() => {
+    const sel = selectedItems().filter((i) => i.groupId);
+    if (!sel.length) return;
+    commit(Object.fromEntries(sel.map((i) => [i.id, i])), Object.fromEntries(sel.map((i) => [i.id, { ...i, groupId: null }])));
+  }, [commit]);
+
+  const toggleFlag = useCallback(
+    (ids: string[], flag: 'locked' | 'hidden') => {
+      const cur = ids.map((id) => itemsRef.current[id]).filter(Boolean);
+      const on = !cur.every((i) => i[flag]);
+      patchItems(ids, (i) => ({ ...i, [flag]: on }));
+      if (on) setSelection(new Set([...selRef.current].filter((id) => !ids.includes(id) || flag === 'locked')));
+    },
+    [patchItems],
+  );
+
+  /** Move layers above/below another layer in the stack. */
+  const reorderLayers = useCallback(
+    (dragIds: string[], targetId: string, place: 'above' | 'below') => {
+      const all = Object.values(itemsRef.current)
+        .filter((i) => !dragIds.includes(i.id))
+        .sort((a, b) => a.z - b.z);
+      const ti = all.findIndex((i) => i.id === targetId);
+      if (ti < 0) return;
+      const moving = dragIds
+        .map((id) => itemsRef.current[id])
+        .filter(Boolean)
+        .sort((a, b) => a.z - b.z);
+      const lo = place === 'above' ? all[ti].z : ti > 0 ? all[ti - 1].z : all[ti].z - moving.length - 1;
+      const hi = place === 'above' ? (ti < all.length - 1 ? all[ti + 1].z : all[ti].z + moving.length + 1) : all[ti].z;
+      commit(
+        Object.fromEntries(moving.map((i) => [i.id, i])),
+        Object.fromEntries(moving.map((i, k) => [i.id, { ...i, z: lo + ((hi - lo) * (k + 1)) / (moving.length + 1) }])),
+      );
+    },
+    [commit],
+  );
+
   const deleteSelection = useCallback(() => {
     const sel = selectedItems();
     if (!sel.length) return;
@@ -693,7 +815,10 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     if (!sel.length) return;
     const off = 24 / viewRef.current.zoom;
     let z = maxZ();
-    const copies = sel.map((i) => ({ ...i, id: uid(), x: i.x + off, y: i.y + off, z: ++z }));
+    const copies = remapGroups(
+      sel.map((i) => ({ ...i, id: uid(), x: i.x + off, y: i.y + off, z: ++z })),
+      sel,
+    );
     commit(Object.fromEntries(copies.map((c) => [c.id, null])), Object.fromEntries(copies.map((c) => [c.id, c])));
     setSelection(new Set(copies.map((c) => c.id)));
   }, [commit]);
@@ -859,6 +984,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     const m = mode.current;
     if (!m) return false;
     mode.current = null;
+    snapOthers.current = null;
+    setSnapLines(null);
     setInteracting(false);
     setPanning(false);
     setRotLabel(null);
@@ -1031,6 +1158,35 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         }
         return;
       }
+      const ALIGN: Record<string, AlignMode | 'dx' | 'dy'> = {
+        KeyA: 'left',
+        KeyD: 'right',
+        KeyH: e.shiftKey ? 'dx' : 'hcenter',
+        KeyW: 'top',
+        KeyS: 'bottom',
+        KeyV: e.shiftKey ? 'dy' : 'vcenter',
+      };
+      if (e.altKey && !mod && ALIGN[e.code] && selRef.current.size) {
+        e.preventDefault();
+        alignSelection(ALIGN[e.code]);
+        return;
+      }
+      if (mod && k === 'g') {
+        e.preventDefault();
+        if (e.shiftKey) ungroupSelection();
+        else groupSelection();
+        return;
+      }
+      if (mod && e.shiftKey && (k === 'h' || k === 'l')) {
+        e.preventDefault();
+        toggleFlag([...selRef.current], k === 'h' ? 'hidden' : 'locked');
+        return;
+      }
+      if (mod && k === '\\') {
+        e.preventDefault();
+        setSidebar({ ...sidebarRef.current, open: !sidebarRef.current.open });
+        return;
+      }
       if (mod && k === 'z') {
         e.preventDefault();
         travel(e.shiftKey ? 'redo' : 'undo');
@@ -1039,7 +1195,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         travel('redo');
       } else if (mod && k === 'a') {
         e.preventDefault();
-        setSelection(new Set(Object.keys(itemsRef.current)));
+        setSelection(new Set(Object.values(itemsRef.current).filter(selectable).map((i) => i.id)));
       } else if (mod && k === 'd') {
         e.preventDefault();
         duplicateSelection();
@@ -1106,7 +1262,21 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
     };
-  }, [travel, duplicateSelection, deleteSelection, zoomBy, zoomTo, zoomToFit, restack, nudge, rotateSelection]);
+  }, [
+    travel,
+    duplicateSelection,
+    deleteSelection,
+    zoomBy,
+    zoomTo,
+    zoomToFit,
+    restack,
+    nudge,
+    rotateSelection,
+    alignSelection,
+    groupSelection,
+    ungroupSelection,
+    toggleFlag,
+  ]);
 
   // Wheel: two-finger scroll pans, pinch / ⌘-scroll zooms toward the cursor.
   useEffect(() => {
@@ -1226,18 +1396,20 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     const el = target.closest<HTMLElement>('[data-item-id]');
     if (el) {
       const id = el.dataset.itemId!;
+      // ⌘-click picks one item inside a group; a plain click picks the whole group.
+      const unit = e.metaKey || e.ctrlKey ? new Set([id]) : withGroups([id]);
       let sel = new Set(selRef.current);
-      let reduceTo: string | null = null;
-      if (e.shiftKey || e.metaKey || e.ctrlKey) {
-        if (sel.has(id)) {
-          sel.delete(id);
+      let reduceTo: string[] | null = null;
+      if (e.shiftKey) {
+        if ([...unit].every((u) => sel.has(u))) {
+          for (const u of unit) sel.delete(u);
           setSelection(sel);
           mode.current = null;
           return;
         }
-        sel.add(id);
-      } else if (!sel.has(id)) sel = new Set([id]);
-      else if (sel.size > 1) reduceTo = id;
+        for (const u of unit) sel.add(u);
+      } else if (!sel.has(id)) sel = unit;
+      else if (sel.size > unit.size) reduceTo = [...unit];
       setSelection(sel);
       const ids = [...sel].filter((i) => itemsRef.current[i]);
       const pw = toWorld(e.clientX, e.clientY);
@@ -1288,7 +1460,10 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         const order = [...m.ids].sort((a, b) => m.base[a].z - m.base[b].z);
         if (m.alt) {
           // ⌥-drag duplicates
-          const copies = order.map((id) => ({ ...m.base[id], id: uid(), z: ++z }));
+          const copies = remapGroups(
+            order.map((id) => ({ ...m.base[id], id: uid(), z: ++z })),
+            order.map((id) => m.base[id]),
+          );
           m.ids = copies.map((c) => c.id);
           m.base = Object.fromEntries(copies.map((c) => [c.id, c]));
           m.before = Object.fromEntries(copies.map((c) => [c.id, null]));
@@ -1302,8 +1477,18 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       }
       // Track the pointer in world space so zooming mid-drag doesn't make images jump.
       const pw = toWorld(e.clientX, e.clientY);
-      const dx = pw.x - m.wx;
-      const dy = pw.y - m.wy;
+      let dx = pw.x - m.wx;
+      let dy = pw.y - m.wy;
+      if (!(e.metaKey || e.ctrlKey)) {
+        const others = (snapOthers.current ??= Object.values(itemsRef.current)
+          .filter((i) => !i.hidden && !m.ids.includes(i.id) && !m.origIds.includes(i.id))
+          .map(aabb));
+        const box = boundsOf(m.ids.map((id) => ({ ...m.base[id], x: m.base[id].x + dx, y: m.base[id].y + dy })))!;
+        const snap = snapMove(box, others, 6 / v.zoom);
+        dx += snap.dx;
+        dy += snap.dy;
+        setSnapLines(snap.guides.length || snap.gaps.length ? { guides: snap.guides, gaps: snap.gaps } : null);
+      } else setSnapLines(null);
       const next = { ...itemsRef.current };
       for (const id of m.ids) next[id] = { ...m.base[id], x: m.base[id].x + dx, y: m.base[id].y + dy };
       setItems(next);
@@ -1324,7 +1509,28 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       if (!m.dirY) w = Math.max(min, sx); // left/right edge
       else if (!m.dirX) w = Math.max(min, sy) * r; // top/bottom edge
       else w = Math.max(min, (sx + sy / r) / (1 + 1 / (r * r))); // corner
-      const h = w / r;
+      let h = w / r;
+      if (!m.before.rotation && !(e.metaKey || e.ctrlKey)) {
+        const others = (snapOthers.current ??= Object.values(itemsRef.current)
+          .filter((i) => !i.hidden && i.id !== m.id)
+          .map(aabb));
+        const tol = 6 / v.zoom;
+        const ex = m.dirX ? snapEdge(m.ax + m.dirX * w, 'x', others, tol) : null;
+        const ey = m.dirY ? snapEdge(m.ay + m.dirY * h, 'y', others, tol) : null;
+        const dX = ex === null ? Infinity : Math.abs(ex - (m.ax + m.dirX * w));
+        const dY = ey === null ? Infinity : Math.abs(ey - (m.ay + m.dirY * h));
+        if (dX <= dY && ex !== null) w = Math.max(min, (ex - m.ax) * m.dirX);
+        else if (ey !== null) w = Math.max(min, (ey - m.ay) * m.dirY) * r;
+        h = w / r;
+        const rect = {
+          x: m.dirX ? (m.dirX > 0 ? m.ax : m.ax - w) : m.ax - w / 2,
+          y: m.dirY ? (m.dirY > 0 ? m.ay : m.ay - h) : m.ay - h / 2,
+          w,
+          h,
+        };
+        const g = guidesFor(rect, others, ex !== null && dX <= dY, ey !== null && dY < dX);
+        setSnapLines(g.guides.length ? { guides: g.guides, gaps: [] } : null);
+      }
       const hx = (m.dirX * w) / 2;
       const hy = (m.dirY * h) / 2;
       const cx = m.ax + hx * cos - hy * sin;
@@ -1371,7 +1577,9 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       if (!marquee) setInteracting(true);
       setMarquee(rect);
       const hit = new Set(m.base);
-      for (const item of Object.values(itemsRef.current)) if (hitsRect(item, rect)) hit.add(item.id);
+      const touched: string[] = [];
+      for (const item of Object.values(itemsRef.current)) if (selectable(item) && hitsRect(item, rect)) touched.push(item.id);
+      for (const id of withGroups(touched)) hit.add(id);
       setSelection(hit);
     }
   };
@@ -1389,6 +1597,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const endPointer = () => {
     const m = mode.current;
     mode.current = null;
+    snapOthers.current = null;
+    setSnapLines(null);
     if (m?.type === 'resize') remeasureText([m.id]);
     if (m?.type === 'groupResize') remeasureText(Object.keys(m.base));
     setInteracting(false);
@@ -1397,7 +1607,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     if (!m) return;
     if (m.type === 'move') {
       if (m.moved) commit(m.before, Object.fromEntries(m.ids.map((id) => [id, itemsRef.current[id]])));
-      else if (m.reduceTo) setSelection(new Set([m.reduceTo]));
+      else if (m.reduceTo) setSelection(new Set(m.reduceTo));
     } else if (m.type === 'groupResize') {
       const ids = Object.keys(m.base);
       if (ids.some((id) => itemsRef.current[id]?.w !== m.base[id].w))
@@ -1421,6 +1631,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     if (!el) return;
     const it = itemsRef.current[el.dataset.itemId!];
     if (!it) return;
+    // Double-click a grouped item while its group is selected: select just that item.
+    if (it.groupId && selRef.current.size > 1 && [...withGroups([it.id])].every((id) => selRef.current.has(id))) {
+      setSelection(new Set([it.id]));
+      return;
+    }
     if (it.kind === 'text') startEdit(it.id);
     else fitRect(aabb(it), Math.max(1, it.naturalW / it.w));
   };
@@ -1492,7 +1707,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
           icon: <MousePointer2 />,
           shortcut: `${MOD}A`,
           disabled: !sorted.length,
-          onSelect: () => setSelection(new Set(Object.keys(itemsRef.current))),
+          onSelect: () => setSelection(new Set(Object.values(itemsRef.current).filter(selectable).map((i) => i.id))),
         },
         { label: 'Zoom to fit', icon: <Maximize />, shortcut: '⇧1', onSelect: zoomToFit },
       ];
@@ -1558,7 +1773,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
           style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`, ['--zoom' as string]: view.zoom }}
         >
           {sorted.map((it) =>
-            it.kind === 'text' ? (
+            it.hidden ? null : it.kind === 'text' ? (
               <TextView
                 key={it.id}
                 item={it}
@@ -1702,6 +1917,57 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
               </div>
             );
           })()}
+        {snapLines && (
+          <svg className="snap-lines" width="100%" height="100%">
+            {snapLines.guides.map((g, i) =>
+              g.axis === 'x' ? (
+                <line
+                  key={`g${i}`}
+                  x1={g.pos * view.zoom + view.x}
+                  x2={g.pos * view.zoom + view.x}
+                  y1={g.from * view.zoom + view.y}
+                  y2={g.to * view.zoom + view.y}
+                />
+              ) : (
+                <line
+                  key={`g${i}`}
+                  y1={g.pos * view.zoom + view.y}
+                  y2={g.pos * view.zoom + view.y}
+                  x1={g.from * view.zoom + view.x}
+                  x2={g.to * view.zoom + view.x}
+                />
+              ),
+            )}
+            {snapLines.gaps.map((g, i) => {
+              const a = g.a * (view.zoom) + (g.axis === 'x' ? view.x : view.y);
+              const b = g.b * view.zoom + (g.axis === 'x' ? view.x : view.y);
+              const at = g.at * view.zoom + (g.axis === 'x' ? view.y : view.x);
+              const label = Math.round(g.b - g.a);
+              const mid = (a + b) / 2;
+              return g.axis === 'x' ? (
+                <g key={`s${i}`} className="gap">
+                  <line x1={a} x2={b} y1={at} y2={at} />
+                  <line x1={a} x2={a} y1={at - 4} y2={at + 4} />
+                  <line x1={b} x2={b} y1={at - 4} y2={at + 4} />
+                  <rect x={mid - 14} y={at + 6} width={28} height={16} rx={3} />
+                  <text x={mid} y={at + 17.5}>
+                    {label}
+                  </text>
+                </g>
+              ) : (
+                <g key={`s${i}`} className="gap">
+                  <line y1={a} y2={b} x1={at} x2={at} />
+                  <line y1={a} y2={a} x1={at - 4} x2={at + 4} />
+                  <line y1={b} y2={b} x1={at - 4} x2={at + 4} />
+                  <rect y={mid - 8} x={at + 6} width={28} height={16} rx={3} />
+                  <text y={mid + 3.5} x={at + 20}>
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+          </svg>
+        )}
         {dragOver && <div className="drop-ring" />}
         {rotLabel && (
           <div className="rot-label" style={{ left: rotLabel.x + 14, top: rotLabel.y + 14 }}>
@@ -1711,6 +1977,41 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       </div>
 
       {chrome(canvasApi, interacting)}
+
+      <Sidebar
+        open={sidebar.open}
+        tab={sidebar.tab}
+        onToggle={() => setSidebar({ ...sidebar, open: !sidebar.open })}
+        onTab={(tab) => setSidebar({ open: true, tab })}
+        items={sorted}
+        groups={groups}
+        selection={selection}
+        dark={dark}
+        onSelect={(ids, how) => {
+          if (how === 'toggle') {
+            const next = new Set(selRef.current);
+            const allIn = ids.every((id) => next.has(id));
+            for (const id of ids) (allIn ? next.delete(id) : next.add(id));
+            setSelection(next);
+          } else setSelection(new Set(ids));
+        }}
+        onRenameItem={(id, name) => patchItems([id], (i) => ({ ...i, name }))}
+        onRenameGroup={saveGroup}
+        onPatch={patchItems}
+        onPreview={previewItems}
+        onPreviewEnd={endPreview}
+        onAlign={alignSelection}
+        onGroup={groupSelection}
+        onUngroup={ungroupSelection}
+        onToggleFlag={toggleFlag}
+        onArrange={restack}
+        onDelete={deleteSelection}
+        onReorder={reorderLayers}
+        onFocus={(ids) => {
+          const b = boundsOf(ids.map((id) => itemsRef.current[id]).filter(Boolean));
+          if (b) fitRect(b, Math.max(1, viewRef.current.zoom));
+        }}
+      />
 
       {menu && <Menu x={menu.x} y={menu.y} entries={menuEntries()} onClose={() => setMenu(null)} />}
       {urlDialogAt && (

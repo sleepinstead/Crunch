@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Project, type View } from './api';
 import { isDark } from './color';
 import { Canvas } from './components/Canvas';
@@ -7,6 +7,9 @@ import { ConfirmDialog, Dialog, Toasts, Tooltips, type ToastMsg } from './compon
 import { SettingsPanel } from './components/SettingsPanel';
 import { TrashPanel } from './components/TrashPanel';
 import { DEFAULT_SETTINGS, MOTION_SCALE, normalizeSettings, type Settings } from './settings';
+
+// The landing page only loads when someone opens it (from the logo).
+const Landing = lazy(() => import('./landing/Landing'));
 
 const ACTIVE_KEY = 'crunch.activeProject';
 const store = {
@@ -60,6 +63,21 @@ export function App() {
   const [showKeys, setShowKeys] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [panel, setPanel] = useState<'settings' | 'trash' | null>(null);
+  // The landing page lives at #welcome, so back/forward and reloads keep it.
+  const [landing, setLanding] = useState(() => location.hash === '#welcome');
+  useEffect(() => {
+    const on = () => setLanding(location.hash === '#welcome');
+    window.addEventListener('hashchange', on);
+    return () => window.removeEventListener('hashchange', on);
+  }, []);
+  const openLanding = () => {
+    setPanel(null);
+    location.hash = 'welcome';
+  };
+  const closeLanding = () => {
+    if (location.hash === '#welcome') history.pushState(null, '', location.pathname + location.search);
+    setLanding(false);
+  };
   const [reloadSignal, setReloadSignal] = useState(0);
   const settingsOpen = panel === 'settings';
   const togglePanel = (which: 'settings' | 'trash') => setPanel((p) => (p === which ? null : which));
@@ -273,9 +291,19 @@ export function App() {
       )}
       {/* The name sits on the canvas, so it takes the canvas's tone, not the interface theme. */}
       {settings.showName && (
-        <div className="brand" data-tone={active && isDark(active.bgColor) ? 'dark' : 'light'}>
+        <button
+          className="brand"
+          data-tone={active && isDark(active.bgColor) ? 'dark' : 'light'}
+          onClick={openLanding}
+          data-tip="About Crunch"
+        >
           Crunch
-        </div>
+        </button>
+      )}
+      {landing && (
+        <Suspense fallback={null}>
+          <Landing onOpenApp={closeLanding} />
+        </Suspense>
       )}
       <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closePanel} />
       <TrashPanel

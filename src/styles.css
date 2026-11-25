@@ -153,8 +153,15 @@ svg {
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text);
-  pointer-events: none;
   user-select: none;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.15s, opacity 0.15s;
+}
+.brand:hover {
+  background: var(--surface-hover);
 }
 
 /* ---------- canvas ---------- */

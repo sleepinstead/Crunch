@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -16,8 +16,6 @@ import {
   Group,
   Image as ImageIcon,
   Layers,
-  Link,
-  Link2Off,
   Lock,
   LockOpen,
   PanelLeft,
@@ -27,16 +25,26 @@ import {
   Trash2,
   Type,
   Ungroup,
+  RotateCw,
+  Pencil,
+  Focus,
+  CopyPlus,
+  Blend,
 } from 'lucide-react';
 import type { Item } from '../api';
 import { boundsOf, type AlignMode } from '../geometry';
 import { hostOf } from '../ingest';
 import { ColorPicker } from './ColorPicker';
+import { Menu, type MenuEntry } from './ui';
 
 interface Props {
   open: boolean;
   tab: 'layers' | 'design';
   onToggle: () => void;
+  /** Open/close without remembering it (hover peeks, click-outside). */
+  onSetOpen: (open: boolean) => void;
+  /** Keep it open (and remember that). */
+  onPin: () => void;
   onTab: (tab: 'layers' | 'design') => void;
   items: Item[]; // sorted by z, bottom first
   groups: Record<string, string>;
@@ -54,6 +62,7 @@ interface Props {
   onToggleFlag: (ids: string[], flag: 'locked' | 'hidden') => void;
   onArrange: (where: 'front' | 'back') => void;
   onDelete: () => void;
+  onDuplicate: () => void;
   onReorder: (dragIds: string[], targetId: string, place: 'above' | 'below') => void;
   onFocus: (ids: string[]) => void;
 }
@@ -102,6 +111,7 @@ function NumberField({
   onScrub,
   onScrubEnd,
   suffix,
+  tip,
   step = 1,
   min,
   max,
@@ -112,11 +122,12 @@ function NumberField({
   onScrub?: (v: number) => void;
   onScrubEnd?: () => void;
   suffix?: string;
+  tip?: string;
   step?: number;
   min?: number;
   max?: number;
 }) {
-  const shown = value === null ? '' : String(Math.round(value * 100) / 100);
+  const shown = value === null ? '' : String(Math.round(value / Math.min(1, step)) * Math.min(1, step));
   const [text, setText] = useState(shown);
   const [focused, setFocused] = useState(false);
   useEffect(() => {
@@ -129,6 +140,7 @@ function NumberField({
     <label className="num">
       <span
         className="num-label"
+        data-tip={tip ? `${tip} · drag to adjust` : undefined}
         onPointerDown={(e) => {
           if (value === null || !onScrub) return;
           e.preventDefault();
@@ -197,7 +209,7 @@ function IconButton({
   children: ReactNode;
 }) {
   return (
-    <button className={`icon-btn${active ? ' on' : ''}`} title={title} aria-label={title} disabled={disabled} onClick={onClick}>
+    <button className={`icon-btn${active ? ' on' : ''}`} data-tip={title} aria-label={title} disabled={disabled} onClick={onClick}>
       {children}
     </button>
   );
@@ -214,6 +226,7 @@ function LayersTab(p: Props) {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [drag, setDrag] = useState<string[] | null>(null);
   const [drop, setDrop] = useState<{ id: string; place: 'above' | 'below' } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; ids: string[]; key: string; isGroup: boolean } | null>(null);
 
   // Expand a group when one of its members is selected on its own.
   useEffect(() => {
@@ -243,8 +256,35 @@ function LayersTab(p: Props) {
   const rowIds = (r: Row) => (r.kind === 'group' ? r.members.map((m) => m.id) : [r.item.id]);
   const anchorId = (r: Row) => (r.kind === 'group' ? r.members[0].id : r.item.id);
 
+  const menuEntries = (): MenuEntry[] => {
+    if (!menu) return [];
+    const members = p.items.filter((i) => menu.ids.includes(i.id));
+    const sel = p.items.filter((i) => p.selection.has(i.id));
+    const units = new Set(sel.map((i) => i.groupId || i.id)).size;
+    const locked = members.every((i) => i.locked);
+    const hidden = members.every((i) => i.hidden);
+    return [
+      { label: 'Rename', icon: <Pencil />, onSelect: () => setRenaming(menu.key) },
+      { label: 'Zoom to', icon: <Focus />, onSelect: () => p.onFocus(menu.ids) },
+      'sep',
+      ...(sel.some((i) => i.groupId)
+        ? ([{ label: 'Ungroup', icon: <Ungroup />, shortcut: '⇧⌘G', onSelect: p.onUngroup }] as MenuEntry[])
+        : []),
+      ...(units > 1 ? ([{ label: 'Group', icon: <Group />, shortcut: '⌘G', onSelect: p.onGroup }] as MenuEntry[]) : []),
+      { label: locked ? 'Unlock' : 'Lock', icon: locked ? <LockOpen /> : <Lock />, shortcut: '⇧⌘L', onSelect: () => p.onToggleFlag(menu.ids, 'locked') },
+      { label: hidden ? 'Show' : 'Hide', icon: hidden ? <Eye /> : <EyeOff />, shortcut: '⇧⌘H', onSelect: () => p.onToggleFlag(menu.ids, 'hidden') },
+      'sep',
+      { label: 'Bring to front', icon: <BringToFront />, shortcut: ']', onSelect: () => p.onArrange('front') },
+      { label: 'Send to back', icon: <SendToBack />, shortcut: '[', onSelect: () => p.onArrange('back') },
+      { label: 'Duplicate', icon: <CopyPlus />, shortcut: '⌘D', onSelect: p.onDuplicate },
+      'sep',
+      { label: 'Delete', icon: <Trash2 />, shortcut: '⌫', danger: true, onSelect: p.onDelete },
+    ];
+  };
+
   return (
     <div className="layers" role="tree">
+      {menu && <Menu x={menu.x} y={menu.y} entries={menuEntries()} onClose={() => setMenu(null)} />}
       {rows.map((r) => {
         const ids = rowIds(r);
         const key = r.kind === 'group' ? `g:${r.id}` : r.item.id;
@@ -296,6 +336,13 @@ function LayersTab(p: Props) {
             }}
             onClick={(e) => p.onSelect(ids, e.shiftKey || e.metaKey || e.ctrlKey ? 'toggle' : 'replace')}
             onDoubleClick={() => setRenaming(key)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              // Right-clicking an unselected row selects it first (like Figma).
+              if (!ids.every((id) => p.selection.has(id))) p.onSelect(ids, 'replace');
+              setMenu({ x: e.clientX, y: e.clientY, ids, key, isGroup: r.kind === 'group' });
+            }}
           >
             {r.kind === 'group' ? (
               <button
@@ -337,14 +384,29 @@ function LayersTab(p: Props) {
                 }}
               />
             ) : (
-              <span className="layer-name" title={name}>
+              <span className="layer-name" data-tip={name}>
                 {name}
               </span>
             )}
             <span className="layer-actions">
+              {r.kind === 'group' && (
+                <button
+                  className="layer-act"
+                  data-tip="Ungroup (⇧⌘G)"
+                  aria-label="Ungroup"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    p.onSelect(ids, 'replace');
+                    // Selection updates synchronously via ref, so ungroup acts on this group.
+                    requestAnimationFrame(() => p.onUngroup());
+                  }}
+                >
+                  <Ungroup />
+                </button>
+              )}
               <button
                 className={`layer-act${locked ? ' on' : ''}`}
-                title={locked ? 'Unlock' : 'Lock'}
+                data-tip={locked ? 'Unlock' : 'Lock'}
                 aria-label={locked ? 'Unlock' : 'Lock'}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -355,7 +417,7 @@ function LayersTab(p: Props) {
               </button>
               <button
                 className={`layer-act${hidden ? ' on' : ''}`}
-                title={hidden ? 'Show' : 'Hide'}
+                data-tip={hidden ? 'Show' : 'Hide'}
                 aria-label={hidden ? 'Show' : 'Hide'}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -368,6 +430,167 @@ function LayersTab(p: Props) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ---------- Figma-style fill: chip + hex, picker in a popup ---------- */
+
+function FillRow({
+  color,
+  mixed,
+  autoColor,
+  open,
+  onOpen,
+  onCommit,
+  onPreview,
+}: {
+  color: string | null; // null = Auto (follows the canvas)
+  mixed: boolean;
+  autoColor: string;
+  open: boolean;
+  onOpen: (open: boolean) => void;
+  onCommit: (c: string | null) => void;
+  onPreview: (c: string) => void;
+}) {
+  const chip = useRef<HTMLButtonElement>(null);
+  const shown = color ?? autoColor;
+  const [hex, setHex] = useState('');
+  useEffect(() => setHex(mixed ? '' : color ? color.replace('#', '').toUpperCase() : ''), [color, mixed]);
+
+  return (
+    <>
+      <div className="fill-row">
+        <button
+          ref={chip}
+          className={`fill-chip${open ? ' on' : ''}`}
+          style={{ background: mixed ? undefined : shown }}
+          data-tip="Color"
+          aria-label="Open color picker"
+          aria-expanded={open}
+          onClick={() => onOpen(!open)}
+        >
+          {mixed && <span className="fill-mixed" />}
+        </button>
+        <input
+          className="fill-hex"
+          value={hex}
+          placeholder={mixed ? 'Mixed' : 'Auto'}
+          spellCheck={false}
+          maxLength={7}
+          aria-label="Hex color"
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setHex(e.target.value.replace('#', '').toUpperCase())}
+          onBlur={() => {
+            if (/^[0-9A-F]{6}$/.test(hex)) onCommit(`#${hex}`);
+            else if (/^[0-9A-F]{3}$/.test(hex)) onCommit(`#${[...hex].map((c) => c + c).join('')}`);
+            else setHex(mixed ? '' : color ? color.replace('#', '').toUpperCase() : '');
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') e.currentTarget.blur();
+          }}
+        />
+        {color ? (
+          <button className="fill-auto" data-tip="Follow the canvas color (Auto)" onClick={() => onCommit(null)}>
+            Auto
+          </button>
+        ) : (
+          !mixed && <span className="fill-auto-tag">Auto</span>
+        )}
+      </div>
+      {open && chip.current && (
+        <FillPopup
+          anchor={chip.current}
+          value={shown}
+          isAuto={!color && !mixed}
+          onClose={() => onOpen(false)}
+          onPreview={onPreview}
+          onCommit={onCommit}
+        />
+      )}
+    </>
+  );
+}
+
+function FillPopup({
+  anchor,
+  value,
+  isAuto,
+  onClose,
+  onPreview,
+  onCommit,
+}: {
+  anchor: HTMLElement;
+  value: string;
+  isAuto: boolean;
+  onClose: () => void;
+  onPreview: (c: string) => void;
+  onCommit: (c: string | null) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  // Sit beside the sidebar, level with the chip (like Figma's fill picker).
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const side = anchor.closest('.sidebar')?.getBoundingClientRect();
+    const a = anchor.getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    const left = (side?.right ?? a.right) + 10;
+    const top = Math.max(8, Math.min(a.top - 12, window.innerHeight - r.height - 8));
+    setPos({ left, top });
+  }, [anchor]);
+
+  useEffect(() => {
+    const down = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (ref.current?.contains(t) || anchor.contains(t)) return;
+      onClose();
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('keydown', key, true);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('keydown', key, true);
+    };
+  }, [anchor, onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="popover fill-pop pop-in"
+      style={pos ?? { visibility: 'hidden', left: 0, top: 0 }}
+      role="dialog"
+      aria-label="Text color"
+    >
+      <div className="fill-pop-head">
+        <span>Text color</span>
+        <button className={`chip${isAuto ? ' on' : ''}`} data-tip="Follow the canvas color" onClick={() => onCommit(null)}>
+          Auto
+        </button>
+      </div>
+      <ColorPicker value={value} onChange={onPreview} />
+      <div className="fill-pop-label">Swatches</div>
+      <div className="fill-swatches">
+        {TEXT_COLORS.map((c) => (
+          <button
+            key={c}
+            className={`swatch small${!isAuto && value.toUpperCase() === c ? ' on' : ''}`}
+            style={{ background: c }}
+            aria-label={c}
+            data-tip={c}
+            onClick={() => onCommit(c)}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -387,7 +610,6 @@ const same = <T,>(xs: T[]): T | null => (xs.length && xs.every((x) => x === xs[0
 
 function DesignTab(p: Props) {
   const sel = p.items.filter((i) => p.selection.has(i.id));
-  const [lockRatio, setLockRatio] = useState(true);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { onPreviewEnd } = p;
   // A color drag is one undo step: commit when the pointer is released.
@@ -418,15 +640,17 @@ function DesignTab(p: Props) {
     return { ...it, x: b.x + (it.x - b.x) * k, y: b.y + (it.y - b.y) * k, w: it.w * k, h: it.h * k, fontSize: fs };
   };
   const resizeOne = (axis: 'w' | 'h', v: number) => (it: Item) => {
-    const keep = lockRatio || it.kind === 'text';
-    const w = axis === 'w' ? v : keep ? (v * it.w) / it.h : it.w;
-    const h = axis === 'h' ? v : keep ? (v * it.h) / it.w : it.h;
+    // Always keep proportions.
+    const w = axis === 'w' ? v : (v * it.w) / it.h;
+    const h = axis === 'h' ? v : (v * it.h) / it.w;
     const fs = it.kind === 'text' ? (it.fontSize ?? 24) * (w / it.w) : it.fontSize;
     return { ...it, w: Math.max(1, w), h: Math.max(1, h), fontSize: fs };
   };
 
-  const field = (label: string, value: number | null, fn: (v: number) => (it: Item) => Item, extra: Partial<Parameters<typeof NumberField>[0]> = {}) => (
+  const TIPS: Record<string, string> = { X: 'X position', Y: 'Y position', W: 'Width', H: 'Height', Size: 'Font size' };
+  const field = (label: ReactNode, value: number | null, fn: (v: number) => (it: Item) => Item, extra: Partial<Parameters<typeof NumberField>[0]> = {}) => (
     <NumberField
+      tip={typeof label === 'string' ? TIPS[label] : undefined}
       label={label}
       value={value}
       onCommit={(v) => p.onPatch(ids, fn(v))}
@@ -474,28 +698,24 @@ function DesignTab(p: Props) {
         <div className="grid2">
           {one ? field('X', one.x, (v) => (it) => ({ ...it, x: v })) : field('X', b.x, (v) => moveTo('x', v))}
           {one ? field('Y', one.y, (v) => (it) => ({ ...it, y: v })) : field('Y', b.y, (v) => moveTo('y', v))}
+        </div>
+        <div className="grid2">
           {one ? field('W', one.w, (v) => resizeOne('w', v), { min: 1 }) : field('W', b.w, (v) => scaleTo('w', v), { min: 1 })}
           {one ? field('H', one.h, (v) => resizeOne('h', v), { min: 1 }) : field('H', b.h, (v) => scaleTo('h', v), { min: 1 })}
         </div>
         <div className="grid2">
-          {field('°', same(sel.map((i) => Math.round((i.rotation ?? 0) * 100) / 100)), (v) => (it) => ({ ...it, rotation: ((v + 540) % 360) - 180 }))}
-          {one && one.kind !== 'text' && (
-            <button className={`ratio${lockRatio ? ' on' : ''}`} onClick={() => setLockRatio((x) => !x)} title="Keep proportions">
-              {lockRatio ? <Link /> : <Link2Off />}
-              <span>{lockRatio ? 'Proportions locked' : 'Free resize'}</span>
-            </button>
+          {field(
+            <RotateCw aria-label="Rotation" />,
+            same(sel.map((i) => Math.round((i.rotation ?? 0) * 10) / 10)),
+            (v) => (it) => ({ ...it, rotation: ((v + 540) % 360) - 180 }),
+            { suffix: '°', tip: 'Rotation' },
           )}
-        </div>
-      </section>
-
-      <section>
-        <div className="side-label">Layer</div>
-        <div className="grid2">
-          {field('Opacity', same(sel.map((i) => Math.round((i.opacity ?? 1) * 100))), (v) => (it) => ({ ...it, opacity: v / 100 }), {
-            min: 0,
-            max: 100,
-            suffix: '%',
-          })}
+          {field(
+            <Blend aria-label="Opacity" />,
+            same(sel.map((i) => Math.round((i.opacity ?? 1) * 100))),
+            (v) => (it) => ({ ...it, opacity: v / 100 }),
+            { min: 0, max: 100, suffix: '%', tip: 'Opacity' },
+          )}
         </div>
       </section>
 
@@ -519,31 +739,15 @@ function DesignTab(p: Props) {
               </select>
             </label>
           </div>
-          <div className="text-colors">
-            <button
-              className={`chip${texts.every((t) => !t.color) ? ' on' : ''}`}
-              onClick={() => p.onPatch(ids, (it) => ({ ...it, color: null }))}
-              title="Follow the canvas"
-            >
-              Auto
-            </button>
-            {TEXT_COLORS.map((c) => (
-              <button
-                key={c}
-                className={`swatch small${texts.every((t) => t.color?.toUpperCase() === c) ? ' on' : ''}`}
-                style={{ background: c }}
-                aria-label={c}
-                onClick={() => p.onPatch(ids, (it) => ({ ...it, color: c }))}
-              />
-            ))}
-            <button className={`swatch small custom${pickerOpen ? ' on' : ''}`} aria-label="Custom color" onClick={() => setPickerOpen((o) => !o)} />
-          </div>
-          {pickerOpen && (
-            <ColorPicker
-              value={same(texts.map((t) => t.color ?? '')) || (p.dark ? '#EDEDEC' : '#191919')}
-              onChange={(c) => p.onPreview(ids, (it) => ({ ...it, color: c }))}
-            />
-          )}
+          <FillRow
+            color={same(texts.map((t) => t.color ?? null))}
+            mixed={new Set(texts.map((t) => t.color ?? '')).size > 1}
+            autoColor={p.dark ? '#EDEDEC' : '#191919'}
+            open={pickerOpen}
+            onOpen={setPickerOpen}
+            onCommit={(c) => p.onPatch(ids, (it) => ({ ...it, color: c }))}
+            onPreview={(c) => p.onPreview(ids, (it) => ({ ...it, color: c }))}
+          />
         </section>
       )}
 
@@ -551,28 +755,28 @@ function DesignTab(p: Props) {
         <div className="side-label">Arrange</div>
         <div className="action-grid">
           {grouped && sel.length > 0 && units === 1 ? (
-            <button className="act" onClick={p.onUngroup}>
-              <Ungroup /> Ungroup <kbd>⇧⌘G</kbd>
+            <button className="act" data-tip="Ungroup (⇧⌘G)" onClick={p.onUngroup}>
+              <Ungroup /> Ungroup
             </button>
           ) : (
-            <button className="act" disabled={sel.length < 2} onClick={p.onGroup}>
-              <Group /> Group <kbd>⌘G</kbd>
+            <button className="act" data-tip="Group (⌘G)" disabled={sel.length < 2} onClick={p.onGroup}>
+              <Group /> Group
             </button>
           )}
-          <button className="act" onClick={() => p.onToggleFlag(ids, 'locked')}>
-            {sel.every((i) => i.locked) ? <LockOpen /> : <Lock />} {sel.every((i) => i.locked) ? 'Unlock' : 'Lock'} <kbd>⇧⌘L</kbd>
+          <button className="act" data-tip="Lock (⇧⌘L)" onClick={() => p.onToggleFlag(ids, 'locked')}>
+            {sel.every((i) => i.locked) ? <LockOpen /> : <Lock />} {sel.every((i) => i.locked) ? 'Unlock' : 'Lock'}
           </button>
-          <button className="act" onClick={() => p.onToggleFlag(ids, 'hidden')}>
-            {sel.every((i) => i.hidden) ? <Eye /> : <EyeOff />} {sel.every((i) => i.hidden) ? 'Show' : 'Hide'} <kbd>⇧⌘H</kbd>
+          <button className="act" data-tip="Hide (⇧⌘H)" onClick={() => p.onToggleFlag(ids, 'hidden')}>
+            {sel.every((i) => i.hidden) ? <Eye /> : <EyeOff />} {sel.every((i) => i.hidden) ? 'Show' : 'Hide'}
           </button>
-          <button className="act" onClick={() => p.onArrange('front')}>
-            <BringToFront /> To front <kbd>]</kbd>
+          <button className="act" data-tip="Bring to front (])" onClick={() => p.onArrange('front')}>
+            <BringToFront /> To front
           </button>
-          <button className="act" onClick={() => p.onArrange('back')}>
-            <SendToBack /> To back <kbd>[</kbd>
+          <button className="act" data-tip="Send to back ([)" onClick={() => p.onArrange('back')}>
+            <SendToBack /> To back
           </button>
-          <button className="act danger" onClick={p.onDelete}>
-            <Trash2 /> Delete <kbd>⌫</kbd>
+          <button className="act danger" data-tip="Delete (⌫)" onClick={p.onDelete}>
+            <Trash2 /> Delete
           </button>
         </div>
       </section>
@@ -584,9 +788,73 @@ function DesignTab(p: Props) {
 
 export function Sidebar(p: Props) {
   const ref = useRef<HTMLElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  // Opened by hovering (not clicked): closes again when the pointer leaves.
+  const peek = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+  const openRef = useRef(p.open);
+  openRef.current = p.open;
+  const { onSetOpen } = p;
+
+  // Something in the panel is mid-use: typing, a popup, or a scrub in progress.
+  const busy = () =>
+    !!document.querySelector('.fill-pop') ||
+    (!!ref.current && ref.current.contains(document.activeElement) && document.activeElement?.tagName === 'INPUT');
+
+  const enter = () => {
+    window.clearTimeout(timer.current);
+    if (openRef.current) return;
+    timer.current = window.setTimeout(() => {
+      peek.current = true;
+      onSetOpen(true);
+    }, 140);
+  };
+  const leave = () => {
+    window.clearTimeout(timer.current);
+    if (!peek.current) return;
+    const tryClose = () => {
+      if (!peek.current) return;
+      if (busy()) {
+        timer.current = window.setTimeout(tryClose, 300);
+        return;
+      }
+      peek.current = false;
+      onSetOpen(false);
+    };
+    timer.current = window.setTimeout(tryClose, 350);
+  };
+
+  // Click anywhere outside the panel (and its popups) collapses it.
+  useEffect(() => {
+    if (!p.open) return;
+    const down = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (!t || ref.current?.contains(t) || toggleRef.current?.contains(t)) return;
+      if (t.closest('.fill-pop, .menu, .scrim, .tooltip')) return;
+      window.clearTimeout(timer.current);
+      peek.current = false;
+      onSetOpen(false);
+    };
+    window.addEventListener('pointerdown', down, true);
+    return () => window.removeEventListener('pointerdown', down, true);
+  }, [p.open, onSetOpen]);
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
   return (
     <>
-      <aside ref={ref} className={`sidebar${p.open ? ' shown' : ''}`} aria-label="Layers and design" aria-hidden={!p.open} inert={!p.open}>
+      <aside
+        ref={ref}
+        className={`sidebar${p.open ? ' shown' : ''}`}
+        aria-label="Layers and design"
+        aria-hidden={!p.open}
+        inert={!p.open}
+        onPointerEnter={enter}
+        onPointerLeave={leave}
+        // Interacting with the panel keeps it open.
+        onPointerDown={() => (peek.current = false)}
+        onContextMenu={(e) => e.preventDefault()}
+      >
         <div className="side-tabs" role="tablist">
           <button role="tab" aria-selected={p.tab === 'layers'} className={`side-tab${p.tab === 'layers' ? ' on' : ''}`} onClick={() => p.onTab('layers')}>
             <Layers /> Layers
@@ -598,16 +866,28 @@ export function Sidebar(p: Props) {
         <div className="side-body">{p.tab === 'layers' ? <LayersTab {...p} /> : <DesignTab {...p} />}</div>
       </aside>
       <button
+        ref={toggleRef}
         className={`side-toggle${p.open ? ' on' : ''}`}
+        onPointerEnter={enter}
+        onPointerLeave={leave}
         onClick={(e) => {
           e.currentTarget.blur();
+          window.clearTimeout(timer.current);
+          // Clicking while it's only peeking pins it open.
+          if (peek.current) {
+            peek.current = false;
+            p.onPin();
+            return;
+          }
           p.onToggle();
         }}
-        title={p.open ? 'Hide sidebar (⌘\\)' : 'Show layers & design (⌘\\)'}
+        data-tip={p.open ? 'Hide sidebar (⌘\\)' : 'Show layers & design (⌘\\)'}
         aria-label={p.open ? 'Hide sidebar' : 'Show sidebar'}
         aria-expanded={p.open}
       >
-        {p.open ? <PanelLeftClose /> : <PanelLeft />}
+        {/* Both icons stay mounted and crossfade, so nothing jumps. */}
+        <PanelLeft className="ic-closed" aria-hidden />
+        <PanelLeftClose className="ic-open" aria-hidden />
       </button>
     </>
   );

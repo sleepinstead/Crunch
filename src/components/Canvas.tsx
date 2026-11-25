@@ -15,6 +15,8 @@ import {
   MousePointer2,
   Trash2,
   Type,
+  Group as GroupIcon,
+  Ungroup as UngroupIcon,
   Upload,
 } from 'lucide-react';
 import { api, type Asset, type Item, type Project, type View } from '../api';
@@ -22,7 +24,7 @@ import { CRUNCH_ASSET_ATTR, hostOf, readClipboard, readTransfer, resolveSource, 
 import { isDark } from '../color';
 import { aabb, align, boundsOf, distribute, guidesFor, snapEdge, snapMove, type AlignMode, type GapMark, type Guide, type Rect } from '../geometry';
 import { Sidebar } from './Sidebar';
-import { GAP_PX, SIZE_SCALE, type Settings } from '../settings';
+import { GAP_PX, SIZE_SCALE, TEXT_SIZE_PX, reducedMotion, type Settings } from '../settings';
 import { Menu, UrlDialog, type MenuEntry } from './ui';
 
 export interface CanvasApi {
@@ -421,6 +423,10 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   });
   const sidebarRef = useRef(sidebar);
   sidebarRef.current = sidebar;
+  // Temporary open/close (hover peek, click outside): not remembered across reloads.
+  const setSidebarOpen = useCallback((open: boolean) => {
+    setSidebarState((s) => (s.open === open ? s : { ...s, open }));
+  }, []);
   const setSidebar = (next: { open: boolean; tab: 'layers' | 'design' }) => {
     setSidebarState(next);
     try {
@@ -522,7 +528,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const c0 = { x: (w / 2 - from.x) / from.zoom, y: (h / 2 - from.y) / from.zoom };
       const c1 = { x: (w / 2 - target.x) / target.zoom, y: (h / 2 - target.y) / target.zoom };
       const start = performance.now();
-      const dur = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 320;
+      const dur = reducedMotion() ? 0 : 320;
       const step = (now: number) => {
         const t = dur ? Math.min(1, (now - start) / dur) : 1;
         const e = 1 - Math.pow(1 - t, 3);
@@ -1015,7 +1021,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   /* ---------- text ---------- */
 
   const createText = (at: { x: number; y: number }) => {
-    const fontSize = 24 / viewRef.current.zoom;
+    const fontSize = TEXT_SIZE_PX[settingsRef.current.textSize] / viewRef.current.zoom;
     const it: Item = {
       id: uid(),
       projectId: project.id,
@@ -1102,7 +1108,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const pasteFromMenu = useCallback(
     async (at: { x: number; y: number }) => {
       try {
-        const sources = await readClipboard();
+        const sources = await readClipboard(settingsRef.current.preferOriginal);
         if (sources.length) ingest(sources, at);
         else toast('The clipboard has no image or image link');
       } catch {
@@ -1117,13 +1123,13 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       if (isEditable(e.target) || modalOpen()) return;
-      const sources = readTransfer(e.clipboardData);
+      const sources = readTransfer(e.clipboardData, settingsRef.current.preferOriginal);
       if (!sources.length) {
         if (e.clipboardData?.getData('text/plain').trim()) toast('Paste an image or an image link to add it');
         return;
       }
       e.preventDefault();
-      ingest(sources, pointerWorld());
+      ingest(sources, settingsRef.current.pasteAt === 'cursor' ? pointerWorld() : undefined);
     };
     const onCopy = (e: ClipboardEvent) => {
       if (isEditable(e.target) || modalOpen() || !selRef.current.size) return;
@@ -1479,12 +1485,12 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const pw = toWorld(e.clientX, e.clientY);
       let dx = pw.x - m.wx;
       let dy = pw.y - m.wy;
-      if (!(e.metaKey || e.ctrlKey)) {
+      if (settingsRef.current.snapping && !(e.metaKey || e.ctrlKey)) {
         const others = (snapOthers.current ??= Object.values(itemsRef.current)
           .filter((i) => !i.hidden && !m.ids.includes(i.id) && !m.origIds.includes(i.id))
           .map(aabb));
         const box = boundsOf(m.ids.map((id) => ({ ...m.base[id], x: m.base[id].x + dx, y: m.base[id].y + dy })))!;
-        const snap = snapMove(box, others, 6 / v.zoom);
+        const snap = snapMove(box, others, 6 / v.zoom, settingsRef.current.snapSpacing);
         dx += snap.dx;
         dy += snap.dy;
         setSnapLines(snap.guides.length || snap.gaps.length ? { guides: snap.guides, gaps: snap.gaps } : null);
@@ -1510,7 +1516,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       else if (!m.dirX) w = Math.max(min, sy) * r; // top/bottom edge
       else w = Math.max(min, (sx + sy / r) / (1 + 1 / (r * r))); // corner
       let h = w / r;
-      if (!m.before.rotation && !(e.metaKey || e.ctrlKey)) {
+      if (settingsRef.current.snapping && !m.before.rotation && !(e.metaKey || e.ctrlKey)) {
         const others = (snapOthers.current ??= Object.values(itemsRef.current)
           .filter((i) => !i.hidden && i.id !== m.id)
           .map(aabb));
@@ -1672,7 +1678,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     setDragOver(false);
     if (!accepts(e.dataTransfer)) return;
     e.preventDefault();
-    const sources = readTransfer(e.dataTransfer);
+    const sources = readTransfer(e.dataTransfer, settingsRef.current.preferOriginal);
     if (!sources.length) return toast('Nothing to add — drop images or image links');
     ingest(sources, toWorld(e.clientX, e.clientY), true);
   };
@@ -1715,6 +1721,13 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     return [
       { label: 'Bring to front', icon: <ArrowUpToLine />, shortcut: ']', onSelect: () => restack('front') },
       { label: 'Send to back', icon: <ArrowDownToLine />, shortcut: '[', onSelect: () => restack('back') },
+      'sep',
+      ...(selected.some((i) => i.groupId)
+        ? ([{ label: 'Ungroup', icon: <UngroupIcon />, shortcut: '⇧⌘G', onSelect: ungroupSelection }] as MenuEntry[])
+        : []),
+      ...(new Set(selected.map((i) => i.groupId || i.id)).size > 1
+        ? ([{ label: 'Group', icon: <GroupIcon />, shortcut: '⌘G', onSelect: groupSelection }] as MenuEntry[])
+        : []),
       'sep',
       { label: 'Rotate 90°', icon: <RotateCw />, shortcut: '⇧R', onSelect: () => rotateSelection(90) },
       ...(selected.some((i) => i.rotation)
@@ -1811,6 +1824,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
                   ))}
                 {selected.length === 1 &&
                   editingId !== it.id &&
+                  it.w * view.zoom > 40 &&
+                  it.h * view.zoom > 40 &&
                   (['n', 'e', 's', 'w'] as const).map((e) => (
                     <div key={`e${e}`} className={`edge ${e}`} data-handle={e} data-for={it.id} />
                   ))}
@@ -1874,7 +1889,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
             </div>
           </div>
         )}
-        {selected.length > 0 &&
+        {settings.showSizeLabel &&
+          selected.length > 0 &&
           !marquee &&
           !editingId &&
           (() => {
@@ -1981,7 +1997,9 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       <Sidebar
         open={sidebar.open}
         tab={sidebar.tab}
-        onToggle={() => setSidebar({ ...sidebar, open: !sidebar.open })}
+        onToggle={() => setSidebar({ ...sidebarRef.current, open: !sidebarRef.current.open })}
+        onSetOpen={setSidebarOpen}
+        onPin={() => setSidebar({ ...sidebarRef.current, open: true })}
         onTab={(tab) => setSidebar({ open: true, tab })}
         items={sorted}
         groups={groups}
@@ -2006,6 +2024,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         onToggleFlag={toggleFlag}
         onArrange={restack}
         onDelete={deleteSelection}
+        onDuplicate={duplicateSelection}
         onReorder={reorderLayers}
         onFocus={(ids) => {
           const b = boundsOf(ids.map((id) => itemsRef.current[id]).filter(Boolean));

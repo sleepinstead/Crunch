@@ -37,7 +37,6 @@ export function TrashPanel(props: {
       };
     }
     setShown(false);
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) setMounted(false);
   }, [props.open]);
 
   if (!mounted) return null;
@@ -123,7 +122,7 @@ function Panel({
       aria-label="Recently deleted"
       aria-hidden={!open}
       inert={!open}
-      onTransitionEnd={(e) => e.target === ref.current && e.propertyName === 'transform' && onExited()}
+      onTransitionEnd={(e) => e.target === ref.current && e.propertyName === 'opacity' && onExited()}
     >
       <header className="settings-head">
         <div>
@@ -151,13 +150,13 @@ function Panel({
                     onError={(e) => e.currentTarget.classList.add('missing')}
                   />
                   <div className="trash-actions">
-                    <button className="btn secondary small" onClick={() => restore([t.id])} title="Restore">
+                    <button className="btn secondary small" onClick={() => restore([t.id])} data-tip="Restore">
                       <RotateCcw size={13} /> Restore
                     </button>
                     <button
                       className="icon-btn danger"
                       onClick={() => setConfirm({ ids: [t.id] })}
-                      title="Delete forever"
+                      data-tip="Delete forever"
                       aria-label="Delete forever"
                     >
                       <Trash2 />

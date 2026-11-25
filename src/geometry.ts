@@ -118,7 +118,7 @@ const overlaps = (a1: number, a2: number, b1: number, b2: number) => a1 < b2 && 
  * Snap a moving box to other boxes: edges and centers line up, and equal spacing
  * between neighbours (both "centered between two" and "same gap as next door").
  */
-export function snapMove(box: Rect, others: Rect[], tol: number): Snap {
+export function snapMove(box: Rect, others: Rect[], tol: number, useSpacing = true): Snap {
   let bestX: { d: number } | null = null;
   let bestY: { d: number } | null = null;
   const consider = (axis: 'x' | 'y', d: number) => {
@@ -159,17 +159,25 @@ export function snapMove(box: Rect, others: Rect[], tol: number): Snap {
       if (R) consider(axis, R[P] - g - box[S] - box[P]);
     }
   };
-  spacing('x');
-  spacing('y');
+  if (useSpacing) {
+    spacing('x');
+    spacing('y');
+  }
 
   const dx = (bestX as { d: number } | null)?.d ?? 0;
   const dy = (bestY as { d: number } | null)?.d ?? 0;
   const moved = { ...box, x: box.x + dx, y: box.y + dy };
-  return { dx, dy, ...guidesFor(moved, others, !!bestX, !!bestY) };
+  return { dx, dy, ...guidesFor(moved, others, !!bestX, !!bestY, useSpacing) };
 }
 
 /** Lines and gap markers that hold for a box at its final position. */
-export function guidesFor(box: Rect, others: Rect[], showX = true, showY = true): { guides: Guide[]; gaps: GapMark[] } {
+export function guidesFor(
+  box: Rect,
+  others: Rect[],
+  showX = true,
+  showY = true,
+  showGaps = true,
+): { guides: Guide[]; gaps: GapMark[] } {
   const eps = 0.5;
   const guides: Guide[] = [];
   const gaps: GapMark[] = [];
@@ -198,7 +206,7 @@ export function guidesFor(box: Rect, others: Rect[], showX = true, showY = true)
 
   // Show spacing when the box sits evenly between / next to neighbours.
   for (const axis of ['x', 'y'] as const) {
-    if ((axis === 'x' && !showX) || (axis === 'y' && !showY)) continue;
+    if (!showGaps || (axis === 'x' && !showX) || (axis === 'y' && !showY)) continue;
     const P = axis === 'x' ? 'x' : 'y';
     const S = axis === 'x' ? 'w' : 'h';
     const Q = axis === 'x' ? 'y' : 'x';

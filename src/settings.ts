@@ -10,6 +10,20 @@ export interface Settings {
   fadeDock: boolean;
   newPattern: Pattern;
   newColor: string;
+  // Canvas
+  snapping: boolean;
+  snapSpacing: boolean;
+  showSizeLabel: boolean;
+  pasteAt: 'cursor' | 'center';
+  // Adding images
+  preferOriginal: boolean;
+  // Text
+  textSize: 'small' | 'medium' | 'large';
+  // Appearance
+  uiTheme: 'auto' | 'light' | 'dark';
+  reduceMotion: 'system' | 'on';
+  // Library
+  trashDays: 0 | 30 | 90;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -22,6 +36,15 @@ export const DEFAULT_SETTINGS: Settings = {
   fadeDock: true,
   newPattern: 'dots',
   newColor: '#F7F7F5',
+  snapping: true,
+  snapSpacing: true,
+  showSizeLabel: true,
+  pasteAt: 'cursor',
+  preferOriginal: true,
+  textSize: 'medium',
+  uiTheme: 'auto',
+  reduceMotion: 'system',
+  trashDays: 0,
 };
 
 const oneOf = <T>(v: unknown, opts: readonly T[], d: T): T => (opts.includes(v as T) ? (v as T) : d);
@@ -39,8 +62,23 @@ export function normalizeSettings(raw: Record<string, unknown>): Settings {
     fadeDock: typeof raw.fadeDock === 'boolean' ? raw.fadeDock : d.fadeDock,
     newPattern: oneOf(raw.newPattern, ['dots', 'grid', 'plain'] as const, d.newPattern),
     newColor: typeof raw.newColor === 'string' && /^#[0-9a-f]{6}$/i.test(raw.newColor) ? raw.newColor : d.newColor,
+    snapping: typeof raw.snapping === 'boolean' ? raw.snapping : d.snapping,
+    snapSpacing: typeof raw.snapSpacing === 'boolean' ? raw.snapSpacing : d.snapSpacing,
+    showSizeLabel: typeof raw.showSizeLabel === 'boolean' ? raw.showSizeLabel : d.showSizeLabel,
+    pasteAt: oneOf(raw.pasteAt, ['cursor', 'center'] as const, d.pasteAt),
+    preferOriginal: typeof raw.preferOriginal === 'boolean' ? raw.preferOriginal : d.preferOriginal,
+    textSize: oneOf(raw.textSize, ['small', 'medium', 'large'] as const, d.textSize),
+    uiTheme: oneOf(raw.uiTheme, ['auto', 'light', 'dark'] as const, d.uiTheme),
+    reduceMotion: oneOf(raw.reduceMotion, ['system', 'on'] as const, d.reduceMotion),
+    trashDays: oneOf(raw.trashDays, [0, 30, 90] as const, d.trashDays),
   };
 }
 
 export const GAP_PX = { tight: 8, normal: 20, loose: 44 } as const;
 export const SIZE_SCALE = { small: 0.65, medium: 1, large: 1.45 } as const;
+
+export const TEXT_SIZE_PX = { small: 16, medium: 24, large: 40 } as const;
+
+/** Reduced motion: the app setting, or the system preference. */
+export const reducedMotion = () =>
+  document.documentElement.dataset.reduceMotion === 'on' || matchMedia('(prefers-reduced-motion: reduce)').matches;

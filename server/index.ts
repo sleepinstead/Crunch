@@ -177,6 +177,7 @@ api.patch('/settings', (req, res) => {
   db.prepare("INSERT INTO settings (key, value) VALUES ('app', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(
     JSON.stringify(next),
   );
+  if ('trashDays' in patch) autoEmptyTrash();
   res.json(next);
 });
 
@@ -308,17 +309,10 @@ api.post('/trash/restore', (req, res) => {
 });
 
 // Permanently delete. Image files are removed only when nothing else uses them.
-api.delete('/trash', (req, res) => {
-  const all = req.body?.all === true;
-  const ids: unknown = req.body?.ids;
-  if (!all && !Array.isArray(ids)) throw new HttpError(400, 'ids or all required.');
+/** Permanently delete trash rows; image files go only when nothing else uses them. */
+function purgeTrash(targets: { id: string; asset_id: string }[]): number {
   const files: string[] = [];
   tx(() => {
-    const targets = all
-      ? (db.prepare('SELECT id, asset_id FROM trash').all() as { id: string; asset_id: string }[])
-      : (ids as unknown[])
-          .map((id) => db.prepare('SELECT id, asset_id FROM trash WHERE id = ?').get(String(id)) as { id: string; asset_id: string } | undefined)
-          .filter((t): t is { id: string; asset_id: string } => !!t);
     const del = db.prepare('DELETE FROM trash WHERE id = ?');
     for (const t of targets) del.run(t.id);
     for (const assetId of new Set(targets.map((t) => t.asset_id))) {
@@ -332,8 +326,33 @@ api.delete('/trash', (req, res) => {
     }
   });
   for (const f of files) fs.rmSync(path.join(IMAGES_DIR, f), { force: true });
-  res.json({ ok: true, filesRemoved: files.length });
+  return files.length;
+}
+
+// Permanently delete. Image files are removed only when nothing else uses them.
+api.delete('/trash', (req, res) => {
+  const all = req.body?.all === true;
+  const ids: unknown = req.body?.ids;
+  if (!all && !Array.isArray(ids)) throw new HttpError(400, 'ids or all required.');
+  const targets = all
+    ? (db.prepare('SELECT id, asset_id FROM trash').all() as { id: string; asset_id: string }[])
+    : (ids as unknown[])
+        .map((id) => db.prepare('SELECT id, asset_id FROM trash WHERE id = ?').get(String(id)) as { id: string; asset_id: string } | undefined)
+        .filter((t): t is { id: string; asset_id: string } => !!t);
+  res.json({ ok: true, filesRemoved: purgeTrash(targets) });
 });
+
+/** "Empty Recently deleted after N days" setting: run at start-up and hourly. */
+function autoEmptyTrash() {
+  const days = Number(readSettings().trashDays);
+  if (![30, 90].includes(days)) return;
+  const cutoff = Date.now() - days * 86_400_000;
+  const old = db.prepare('SELECT id, asset_id FROM trash WHERE deleted_at < ?').all(cutoff) as { id: string; asset_id: string }[];
+  if (old.length) console.log(`  Emptied ${old.length} item(s) from Recently deleted (older than ${days} days).`);
+  if (old.length) purgeTrash(old);
+}
+autoEmptyTrash();
+setInterval(autoEmptyTrash, 3_600_000).unref();
 
 api.get('/projects/:id/items', (req, res) => {
   const rows = db

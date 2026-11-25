@@ -54,7 +54,7 @@ interface Parts {
   text: string;
 }
 
-function fromParts({ files, html, text }: Parts): Source[] {
+function fromParts({ files, html, text }: Parts, preferOriginal = true): Source[] {
   const imgSrcs: string[] = [];
   const assetIds: string[] = [];
   if (html) {
@@ -80,7 +80,10 @@ function fromParts({ files, html, text }: Parts): Source[] {
 
   if (files.length) {
     const web = imgSrcs.filter((s) => !s.startsWith('data:'));
-    if (files.length === 1 && web.length === 1) return [{ kind: 'url', url: web[0], fallback: files[0] }];
+    if (files.length === 1 && web.length === 1)
+      return preferOriginal
+        ? [{ kind: 'url', url: web[0], fallback: files[0] }]
+        : [{ kind: 'file', file: files[0], sourceUrl: web[0] }];
     return files.map((file) => ({ kind: 'file', file }));
   }
   if (imgSrcs.length) return imgSrcs.map(asSource).filter((s): s is Source => !!s);
@@ -92,7 +95,7 @@ function fromParts({ files, html, text }: Parts): Source[] {
 const isImage = (b: Blob) => b.type.startsWith('image/');
 
 /** Must be called synchronously inside the paste/drop event. */
-export function readTransfer(dt: DataTransfer | null): Source[] {
+export function readTransfer(dt: DataTransfer | null, preferOriginal = true): Source[] {
   if (!dt) return [];
   const files: Blob[] = Array.from(dt.files).filter(isImage);
   if (!files.length) {
@@ -107,11 +110,11 @@ export function readTransfer(dt: DataTransfer | null): Source[] {
     files,
     html: dt.getData('text/html'),
     text: dt.getData('text/uri-list') || dt.getData('text/plain'),
-  });
+  }, preferOriginal);
 }
 
 /** Async Clipboard API, used by the "Paste" menu command. */
-export async function readClipboard(): Promise<Source[]> {
+export async function readClipboard(preferOriginal = true): Promise<Source[]> {
   const items = await navigator.clipboard.read();
   const files: Blob[] = [];
   let html = '';
@@ -123,7 +126,7 @@ export async function readClipboard(): Promise<Source[]> {
       else if (type === 'text/plain' || type === 'text/uri-list') text += (await (await item.getType(type)).text()) + '\n';
     }
   }
-  return fromParts({ files, html, text });
+  return fromParts({ files, html, text }, preferOriginal);
 }
 
 export function hostOf(url: string) {

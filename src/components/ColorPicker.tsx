@@ -171,7 +171,7 @@ export function ColorPicker({
         {Dropper && (
           <button
             className="icon-btn"
-            title="Pick a color from the screen"
+            data-tip="Pick a color from the screen"
             aria-label="Pick a color from the screen"
             onClick={async () => {
               try {

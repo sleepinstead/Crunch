@@ -238,3 +238,86 @@ export function Toasts({ toasts }: { toasts: ToastMsg[] }) {
     </div>
   );
 }
+
+/* ---------- tooltips ---------- */
+
+/**
+ * One app-wide tooltip for anything with `data-tip`. A trailing "(…)" is shown as a
+ * shortcut chip. Appears after a short pause, then instantly while moving between controls.
+ */
+export function Tooltips() {
+  const [tip, setTip] = useState<{ label: string; keys?: string; x: number; y: number; below: boolean } | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const warmUntil = useRef(0);
+  const target = useRef<Element | null>(null);
+
+  useEffect(() => {
+    const hide = () => {
+      window.clearTimeout(timer.current);
+      if (target.current) warmUntil.current = performance.now() + 500;
+      target.current = null;
+      setTip(null);
+    };
+    const show = (el: Element) => {
+      const raw = el.getAttribute('data-tip');
+      if (!raw) return;
+      const m = /^(.*?)\s*\(([^()]+)\)$/.exec(raw);
+      const r = el.getBoundingClientRect();
+      const below = r.top < 44;
+      setTip({
+        label: m ? m[1] : raw,
+        keys: m ? m[2] : undefined,
+        x: r.left + r.width / 2,
+        y: below ? r.bottom + 8 : r.top - 8,
+        below,
+      });
+    };
+    const over = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') return;
+      const el = (e.target as Element | null)?.closest?.('[data-tip]') ?? null;
+      if (el === target.current) return;
+      window.clearTimeout(timer.current);
+      if (!el) return hide();
+      target.current = el;
+      setTip(null);
+      const delay = performance.now() < warmUntil.current ? 0 : 800;
+      timer.current = window.setTimeout(() => target.current === el && show(el), delay);
+    };
+    window.addEventListener('pointerover', over);
+    window.addEventListener('pointerdown', hide, true);
+    window.addEventListener('keydown', hide, true);
+    window.addEventListener('wheel', hide, true);
+    window.addEventListener('blur', hide);
+    return () => {
+      window.removeEventListener('pointerover', over);
+      window.removeEventListener('pointerdown', hide, true);
+      window.removeEventListener('keydown', hide, true);
+      window.removeEventListener('wheel', hide, true);
+      window.removeEventListener('blur', hide);
+    };
+  }, []);
+
+  // Keep it on screen once its size is known.
+  const [dx, setDx] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !tip) return;
+    const r = el.getBoundingClientRect();
+    const left = tip.x - r.width / 2;
+    setDx(left < 8 ? 8 - left : left + r.width > window.innerWidth - 8 ? window.innerWidth - 8 - (left + r.width) : 0);
+  }, [tip]);
+
+  if (!tip) return null;
+  return (
+    <div
+      ref={ref}
+      className={`tooltip${tip.below ? ' below' : ''}`}
+      role="tooltip"
+      style={{ left: tip.x + dx, top: tip.y }}
+    >
+      {tip.label}
+      {tip.keys && <kbd>{tip.keys}</kbd>}
+    </div>
+  );
+}

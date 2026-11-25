@@ -78,7 +78,6 @@ export function SettingsPanel(props: {
       };
     }
     setShown(false);
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) setMounted(false);
   }, [props.open]);
 
   if (!mounted) return null;
@@ -133,7 +132,7 @@ function Panel({
       aria-label="Settings"
       aria-hidden={!open}
       inert={!open}
-      onTransitionEnd={(e) => e.target === ref.current && e.propertyName === 'transform' && onExited()}
+      onTransitionEnd={(e) => e.target === ref.current && e.propertyName === 'opacity' && onExited()}
     >
       <header className="settings-head">
         <div>
@@ -160,10 +159,10 @@ function Panel({
                 ]}
               />
             </Row>
-            <Row title="Shadow" text="Lift images off the canvas.">
+            <Row title="Shadow">
               <Toggle label="Shadow" on={s.imageShadow} onChange={(v) => onChange({ imageShadow: v })} />
             </Row>
-            <Row title="Size" text="For newly added images.">
+            <Row title="New image size">
               <Seg
                 value={s.imageSize}
                 onChange={(v) => onChange({ imageSize: v })}
@@ -174,7 +173,7 @@ function Panel({
                 ]}
               />
             </Row>
-            <Row title="Spacing" text="Between images added together.">
+            <Row title="New image spacing">
               <Seg
                 value={s.imageGap}
                 onChange={(v) => onChange({ imageGap: v })}
@@ -185,13 +184,37 @@ function Panel({
                 ]}
               />
             </Row>
+            <Row title="Keep original web file" text="Downloads the source image instead of the copied preview. Keeps GIFs animated.">
+              <Toggle label="Keep original web file" on={s.preferOriginal} onChange={(v) => onChange({ preferOriginal: v })} />
+            </Row>
           </div>
         </section>
 
         <section>
-          <h3>Navigation</h3>
+          <h3>Canvas</h3>
           <div className="set-card">
-            <Row title="Scroll wheel" text="Zoom suits a mouse. Pan suits a trackpad; pinch still zooms.">
+            <Row title="Snapping" text="Align to other items while moving. Hold ⌘ to move freely.">
+              <Toggle label="Snapping" on={s.snapping} onChange={(v) => onChange({ snapping: v })} />
+            </Row>
+            <Row title="Snap to equal spacing">
+              <span className={s.snapping ? '' : 'set-disabled'}>
+                <Toggle label="Snap to equal spacing" on={s.snapping && s.snapSpacing} onChange={(v) => s.snapping && onChange({ snapSpacing: v })} />
+              </span>
+            </Row>
+            <Row title="Show size while selected">
+              <Toggle label="Show size while selected" on={s.showSizeLabel} onChange={(v) => onChange({ showSizeLabel: v })} />
+            </Row>
+            <Row title="Paste images">
+              <Seg
+                value={s.pasteAt}
+                onChange={(v) => onChange({ pasteAt: v })}
+                options={[
+                  { value: 'cursor', label: 'At cursor' },
+                  { value: 'center', label: 'In center' },
+                ]}
+              />
+            </Row>
+            <Row title="Scroll wheel" text="Pinch always zooms.">
               <Seg
                 value={s.wheel}
                 onChange={(v) => onChange({ wheel: v })}
@@ -205,12 +228,50 @@ function Panel({
         </section>
 
         <section>
-          <h3>Interface</h3>
+          <h3>Text</h3>
           <div className="set-card">
+            <Row title="New text size">
+              <Seg
+                value={s.textSize}
+                onChange={(v) => onChange({ textSize: v })}
+                options={[
+                  { value: 'small', label: 'S' },
+                  { value: 'medium', label: 'M' },
+                  { value: 'large', label: 'L' },
+                ]}
+              />
+            </Row>
+          </div>
+        </section>
+
+        <section>
+          <h3>Appearance</h3>
+          <div className="set-card">
+            <Row title="Interface theme" text="Auto follows the canvas color.">
+              <Seg
+                value={s.uiTheme}
+                onChange={(v) => onChange({ uiTheme: v })}
+                options={[
+                  { value: 'auto', label: 'Auto' },
+                  { value: 'light', label: 'Light' },
+                  { value: 'dark', label: 'Dark' },
+                ]}
+              />
+            </Row>
+            <Row title="Reduce motion">
+              <Seg
+                value={s.reduceMotion}
+                onChange={(v) => onChange({ reduceMotion: v })}
+                options={[
+                  { value: 'system', label: 'System' },
+                  { value: 'on', label: 'Always' },
+                ]}
+              />
+            </Row>
             <Row title="Show app name">
               <Toggle label="Show app name" on={s.showName} onChange={(v) => onChange({ showName: v })} />
             </Row>
-            <Row title="Fade dock while arranging" text="Dims the dock while you drag images.">
+            <Row title="Fade dock while dragging">
               <Toggle label="Fade dock while arranging" on={s.fadeDock} onChange={(v) => onChange({ fadeDock: v })} />
             </Row>
           </div>
@@ -243,7 +304,7 @@ function Panel({
                     style={{ background: c }}
                     onClick={() => onChange({ newColor: c })}
                     aria-label={c}
-                    title={c}
+                    data-tip={c}
                   />
                 ))}
               </div>
@@ -252,8 +313,19 @@ function Panel({
         </section>
 
         <section>
-          <h3>Storage</h3>
+          <h3>Library</h3>
           <div className="set-card">
+            <Row title="Empty Recently deleted" text="Permanently removes old deleted images.">
+              <Seg
+                value={s.trashDays}
+                onChange={(v) => onChange({ trashDays: v })}
+                options={[
+                  { value: 0, label: 'Never' },
+                  { value: 30, label: '30 days' },
+                  { value: 90, label: '90 days' },
+                ]}
+              />
+            </Row>
             <Row title="Library" text={stats ? `${stats.images} images · ${formatBytes(stats.bytes)} · ${stats.projects} projects` : '…'}>
               <span />
             </Row>

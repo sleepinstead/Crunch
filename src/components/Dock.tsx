@@ -213,7 +213,7 @@ export function Dock(p: Props) {
                   if (dropAt) drop(dropAt.id, dropAt.after);
                   setDropAt(null);
                 }}
-                title={editing ? undefined : proj.name}
+                data-tip={editing ? undefined : proj.name}
               >
                 {editing ? (
                   <TabName
@@ -236,7 +236,7 @@ export function Dock(p: Props) {
             e.currentTarget.blur();
             p.onCreate();
           }}
-          title="New project"
+          data-tip="New project"
           aria-label="New project"
         >
           <Plus />
@@ -250,7 +250,7 @@ export function Dock(p: Props) {
             e.currentTarget.blur();
             p.canvas.setTextTool(!p.canvas.textTool);
           }}
-          title="Text (T)"
+          data-tip="Text (T)"
           aria-label="Text"
           aria-pressed={p.canvas.textTool}
         >
@@ -260,7 +260,7 @@ export function Dock(p: Props) {
           ref={bgBtn}
           className={`icon-btn${bgOpen ? ' on' : ''}`}
           onClick={() => setBgOpen((o) => !o)}
-          title="Background"
+          data-tip="Background"
           aria-label="Background"
         >
           <span className="bg-chip" style={{ background: p.active.bgColor }} data-pattern={p.active.pattern} />
@@ -269,7 +269,7 @@ export function Dock(p: Props) {
           ref={zoomBtn}
           className={`zoom-btn${zoomOpen ? ' on' : ''}`}
           onClick={() => setZoomOpen((o) => !o)}
-          title="Zoom"
+          data-tip="Zoom"
         >
           {zoomPct}%
         </button>
@@ -277,7 +277,7 @@ export function Dock(p: Props) {
           data-trash-toggle
           className={`icon-btn${p.trashOpen ? ' on' : ''}`}
           onClick={p.onToggleTrash}
-          title="Recently deleted"
+          data-tip="Recently deleted"
           aria-label="Recently deleted"
         >
           <Archive />
@@ -286,7 +286,7 @@ export function Dock(p: Props) {
           data-settings-toggle
           className={`icon-btn${p.settingsOpen ? ' on' : ''}`}
           onClick={p.onToggleSettings}
-          title="Settings (⌘,)"
+          data-tip="Settings (⌘,)"
           aria-label="Settings"
         >
           <Settings2 />
@@ -346,14 +346,14 @@ export function Dock(p: Props) {
                 style={{ background: c }}
                 onClick={() => p.onBackground({ bgColor: c })}
                 aria-label={c}
-                title={c}
+                data-tip={c}
               />
             ))}
           </div>
           <div className="hex-row">
             <button
               className={`swatch custom${pickerOpen ? ' on' : ''}`}
-              title="Custom color"
+              data-tip="Custom color"
               aria-label="Custom color"
               aria-expanded={pickerOpen}
               onClick={() => setPickerOpen((o) => !o)}

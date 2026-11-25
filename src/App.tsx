@@ -3,7 +3,7 @@ import { api, type Project, type View } from './api';
 import { isDark } from './color';
 import { Canvas } from './components/Canvas';
 import { Dock } from './components/Dock';
-import { ConfirmDialog, Dialog, Toasts, type ToastMsg } from './components/ui';
+import { ConfirmDialog, Dialog, Toasts, Tooltips, type ToastMsg } from './components/ui';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TrashPanel } from './components/TrashPanel';
 import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from './settings';
@@ -96,6 +96,12 @@ export function App() {
     [toast],
   );
   const closePanel = useCallback(() => setPanel(null), []);
+
+  // App-level "reduce motion" (in addition to the system setting).
+  useEffect(() => {
+    if (settings.reduceMotion === 'on') document.documentElement.dataset.reduceMotion = 'on';
+    else delete document.documentElement.dataset.reduceMotion;
+  }, [settings.reduceMotion]);
 
   useEffect(() => {
     if (activeId) store.set(ACTIVE_KEY, activeId);
@@ -223,7 +229,9 @@ export function App() {
   return (
     <div
       className="app"
-      data-tone={active && isDark(active.bgColor) ? 'dark' : 'light'}
+      data-tone={
+        settings.uiTheme === 'auto' ? (active && isDark(active.bgColor) ? 'dark' : 'light') : settings.uiTheme
+      }
       data-shadow={settings.imageShadow || undefined}
       style={{ ['--item-radius' as string]: `${settings.imageRadius}px` }}
     >
@@ -275,6 +283,7 @@ export function App() {
         }}
       />
       <Toasts toasts={toasts} />
+      <Tooltips />
       {confirmDelete && (
         <ConfirmDialog
           title={`Delete “${confirmDelete.name}”?`}

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { HeroDemo } from './HeroDemo';
 import { Bento } from './Bento';
+import { Footer } from './Footer';
 import './landing.css';
 
 /** Fades its children up the first time they scroll into view. */
@@ -155,10 +156,7 @@ export default function Landing({ onOpenApp, animateIn = false }: { onOpenApp: (
         </section>
       </main>
 
-      <footer className="lp-footer">
-        <span>Crunch</span>
-        <span>Images and boards are stored locally, in a folder you own.</span>
-      </footer>
+      <Footer onOpen={open} onFeatures={toFeatures} onTop={() => scroller.current?.scrollTo({ top: 0, behavior: 'smooth' })} />
     </div>
   );
 }

@@ -1,0 +1,259 @@
+/* Landing footer: a dark slab, a drifting wall of posters, a huge wordmark. */
+
+.lf {
+  --lf-bg: #0f0f0e;
+  --lf-ink: #f4f4f2;
+  --lf-ink-2: #9a9a95;
+  --lf-ink-3: #5f5f5b;
+  --lf-line: rgba(255, 255, 255, 0.08);
+  position: relative;
+  overflow: hidden;
+  margin: 0;
+  border-radius: 0; /* full-bleed to the window's edges */
+  background: var(--lf-bg);
+  color: var(--lf-ink);
+}
+/* The slab stays put (it meets the window's edges); its contents rise in */
+.lf .lf-inner {
+  transform: translateY(24px);
+  opacity: 0;
+  transition:
+    transform 0.9s cubic-bezier(0.25, 0.8, 0.25, 1),
+    opacity 0.6s ease-out;
+}
+.lf .lf-inner + .lf-inner {
+  transition-delay: 0.12s;
+}
+.lf[data-seen] .lf-inner {
+  transform: none;
+  opacity: 1;
+}
+/* A soft glow on the top edge, like light catching a desk */
+.lf::before {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+}
+
+.lf-inner {
+  position: relative;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+/* ---------- top: pitch + columns ---------- */
+
+/* One grid: the pitch, then three equal columns on a shared row rhythm */
+.lf-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 48px;
+  padding: 72px 0 64px;
+}
+.lf-line {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+.lf-line span {
+  color: var(--lf-ink-3);
+}
+.landing .lf-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  margin-top: 28px;
+  padding: 0 20px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #ececea 100%);
+  color: #191919;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 1px rgba(255, 255, 255, 0.4),
+    0 4px 0 #9d9d99,
+    0 14px 30px -10px rgba(0, 0, 0, 0.8);
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    box-shadow 0.18s cubic-bezier(0.2, 0.7, 0.3, 1),
+    filter 0.2s;
+}
+.landing .lf-cta:hover {
+  filter: brightness(1.04);
+}
+.landing .lf-cta svg {
+  transition: transform 0.3s var(--rise);
+}
+.landing .lf-cta:hover svg {
+  transform: translateX(3px);
+}
+.landing .lf-cta:active {
+  transform: translateY(4px);
+  transition-duration: 0.07s;
+  box-shadow:
+    inset 0 1px 0 #fff,
+    0 0 0 1px rgba(255, 255, 255, 0.4),
+    0 0 0 #9d9d99,
+    0 4px 10px -6px rgba(0, 0, 0, 0.8);
+}
+
+.lf-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 32px;
+  padding-top: 8px; /* the heads sit on the headline's cap height */
+}
+.lf-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 14px;
+}
+/* Every row the same height, so text links and keycap rows line up across columns */
+.lf-col > :not(.lf-head) {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  white-space: nowrap;
+}
+.lf-head {
+  margin-bottom: 8px;
+  line-height: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--lf-ink-3);
+}
+.landing .lf-col button {
+  position: relative;
+  padding: 0;
+  color: var(--lf-ink-2);
+  transition: color 0.15s;
+}
+/* An underline that draws in from the left */
+.landing .lf-col button::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -3px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.35s var(--rise);
+}
+.landing .lf-col button:hover {
+  color: var(--lf-ink);
+}
+.landing .lf-col button:hover::after {
+  transform: scaleX(1);
+}
+.lf-text {
+  color: var(--lf-ink-2);
+}
+.lf-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--lf-ink-2);
+}
+.landing .lf-key kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: #1f1f1d;
+  color: var(--lf-ink);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 2px 0 #000;
+}
+.lf-key kbd + kbd {
+  margin-right: 6px;
+}
+
+/* ---------- bottom bar ---------- */
+
+.lf-bottom {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px 0 26px;
+  border-top: 1px solid var(--lf-line);
+  font-size: 13px;
+  color: var(--lf-ink-3);
+}
+.lf-dot {
+  flex: 1;
+}
+.landing .lf-up {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: var(--lf-ink-2);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px var(--lf-line);
+  transition:
+    color 0.15s,
+    background-color 0.15s,
+    transform 0.35s var(--rise);
+}
+.landing .lf-up:hover {
+  color: var(--lf-ink);
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-3px);
+}
+
+@media (max-width: 860px) {
+  .lf-top {
+    grid-template-columns: 1fr;
+    padding-top: 56px;
+  }
+  .lf-cols {
+    padding-top: 0;
+  }
+}
+@media (max-width: 640px) {
+  .lf-inner {
+    padding: 0 20px;
+  }
+  .lf-line {
+    font-size: 28px;
+  }
+  .lf-bottom {
+    flex-wrap: wrap;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lf .lf-inner {
+    transform: none;
+    opacity: 1;
+    transition: none;
+  }
+}
+@media (max-width: 560px) {
+  .lf-cols {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 32px;
+  }
+}

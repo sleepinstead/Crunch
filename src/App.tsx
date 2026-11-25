@@ -271,7 +271,12 @@ export function App() {
           )}
         />
       )}
-      {settings.showName && <div className="brand">Crunch</div>}
+      {/* The name sits on the canvas, so it takes the canvas's tone, not the interface theme. */}
+      {settings.showName && (
+        <div className="brand" data-tone={active && isDark(active.bgColor) ? 'dark' : 'light'}>
+          Crunch
+        </div>
+      )}
       <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closePanel} />
       <TrashPanel
         open={panel === 'trash'}

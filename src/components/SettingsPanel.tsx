@@ -3,6 +3,7 @@ import { Check, Copy, X } from 'lucide-react';
 import { api, type Stats } from '../api';
 import type { Settings } from '../settings';
 import { PATTERNS, SWATCHES } from './Dock';
+import { FillRow } from './FillRow';
 
 function Seg<T extends string | number>({
   value,
@@ -102,6 +103,7 @@ function Panel({
   const ref = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Stats | null>(null);
   const [copied, setCopied] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => {
     if (open) api.stats().then(setStats).catch(() => {});
@@ -307,6 +309,17 @@ function Panel({
               />
             </Row>
             <Row title="Background color" stack>
+              <FillRow
+                color={s.newColor}
+                autoColor={s.newColor}
+                allowAuto={false}
+                title="New canvas color"
+                swatches={SWATCHES}
+                open={colorOpen}
+                onOpen={setColorOpen}
+                onCommit={(c) => c && onChange({ newColor: c })}
+                onPreview={(c) => onChange({ newColor: c })}
+              />
               <div className="swatches">
                 {SWATCHES.map((c) => (
                   <button

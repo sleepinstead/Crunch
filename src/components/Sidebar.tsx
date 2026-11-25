@@ -34,7 +34,7 @@ import {
 import type { Item } from '../api';
 import { boundsOf, type AlignMode } from '../geometry';
 import { hostOf } from '../ingest';
-import { ColorPicker } from './ColorPicker';
+import { FillRow } from './FillRow';
 import { Menu, type MenuEntry } from './ui';
 
 interface Props {
@@ -434,167 +434,6 @@ function LayersTab(p: Props) {
   );
 }
 
-/* ---------- Figma-style fill: chip + hex, picker in a popup ---------- */
-
-function FillRow({
-  color,
-  mixed,
-  autoColor,
-  open,
-  onOpen,
-  onCommit,
-  onPreview,
-}: {
-  color: string | null; // null = Auto (follows the canvas)
-  mixed: boolean;
-  autoColor: string;
-  open: boolean;
-  onOpen: (open: boolean) => void;
-  onCommit: (c: string | null) => void;
-  onPreview: (c: string) => void;
-}) {
-  const chip = useRef<HTMLButtonElement>(null);
-  const shown = color ?? autoColor;
-  const [hex, setHex] = useState('');
-  useEffect(() => setHex(mixed ? '' : color ? color.replace('#', '').toUpperCase() : ''), [color, mixed]);
-
-  return (
-    <>
-      <div className="fill-row">
-        <button
-          ref={chip}
-          className={`fill-chip${open ? ' on' : ''}`}
-          style={{ background: mixed ? undefined : shown }}
-          data-tip="Color"
-          aria-label="Open color picker"
-          aria-expanded={open}
-          onClick={() => onOpen(!open)}
-        >
-          {mixed && <span className="fill-mixed" />}
-        </button>
-        <input
-          className="fill-hex"
-          value={hex}
-          placeholder={mixed ? 'Mixed' : 'Auto'}
-          spellCheck={false}
-          maxLength={7}
-          aria-label="Hex color"
-          onFocus={(e) => e.currentTarget.select()}
-          onChange={(e) => setHex(e.target.value.replace('#', '').toUpperCase())}
-          onBlur={() => {
-            if (/^[0-9A-F]{6}$/.test(hex)) onCommit(`#${hex}`);
-            else if (/^[0-9A-F]{3}$/.test(hex)) onCommit(`#${[...hex].map((c) => c + c).join('')}`);
-            else setHex(mixed ? '' : color ? color.replace('#', '').toUpperCase() : '');
-          }}
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-        />
-        {color ? (
-          <button className="fill-auto" data-tip="Follow the canvas color (Auto)" onClick={() => onCommit(null)}>
-            Auto
-          </button>
-        ) : (
-          !mixed && <span className="fill-auto-tag">Auto</span>
-        )}
-      </div>
-      {open && chip.current && (
-        <FillPopup
-          anchor={chip.current}
-          value={shown}
-          isAuto={!color && !mixed}
-          onClose={() => onOpen(false)}
-          onPreview={onPreview}
-          onCommit={onCommit}
-        />
-      )}
-    </>
-  );
-}
-
-function FillPopup({
-  anchor,
-  value,
-  isAuto,
-  onClose,
-  onPreview,
-  onCommit,
-}: {
-  anchor: HTMLElement;
-  value: string;
-  isAuto: boolean;
-  onClose: () => void;
-  onPreview: (c: string) => void;
-  onCommit: (c: string | null) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-
-  // Sit beside the sidebar, level with the chip (like Figma's fill picker).
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const side = anchor.closest('.sidebar')?.getBoundingClientRect();
-    const a = anchor.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    const left = (side?.right ?? a.right) + 10;
-    const top = Math.max(8, Math.min(a.top - 12, window.innerHeight - r.height - 8));
-    setPos({ left, top });
-  }, [anchor]);
-
-  useEffect(() => {
-    const down = (e: PointerEvent) => {
-      const t = e.target as Node;
-      if (ref.current?.contains(t) || anchor.contains(t)) return;
-      onClose();
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('pointerdown', down, true);
-    window.addEventListener('keydown', key, true);
-    return () => {
-      window.removeEventListener('pointerdown', down, true);
-      window.removeEventListener('keydown', key, true);
-    };
-  }, [anchor, onClose]);
-
-  return (
-    <div
-      ref={ref}
-      className="popover fill-pop pop-in"
-      style={pos ?? { visibility: 'hidden', left: 0, top: 0 }}
-      role="dialog"
-      aria-label="Text color"
-    >
-      <div className="fill-pop-head">
-        <span>Text color</span>
-        <button className={`chip${isAuto ? ' on' : ''}`} data-tip="Follow the canvas color" onClick={() => onCommit(null)}>
-          Auto
-        </button>
-      </div>
-      <ColorPicker value={value} onChange={onPreview} />
-      <div className="fill-pop-label">Swatches</div>
-      <div className="fill-swatches">
-        {TEXT_COLORS.map((c) => (
-          <button
-            key={c}
-            className={`swatch small${!isAuto && value.toUpperCase() === c ? ' on' : ''}`}
-            style={{ background: c }}
-            aria-label={c}
-            data-tip={c}
-            onClick={() => onCommit(c)}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
 /* ---------- design ---------- */
 
 const WEIGHTS = [
@@ -604,7 +443,6 @@ const WEIGHTS = [
   { v: 600, label: 'Semibold' },
   { v: 700, label: 'Bold' },
 ];
-const TEXT_COLORS = ['#191919', '#FFFFFF', '#6B6B6B', '#E03E3E', '#D9730D', '#DFAB01', '#0F7B6C', '#2383E2', '#9065B0'];
 
 const same = <T,>(xs: T[]): T | null => (xs.length && xs.every((x) => x === xs[0]) ? xs[0] : null);
 

@@ -3,7 +3,7 @@ import { Grid3x3, Grip, Keyboard, Settings2, Archive, Type, Maximize, Minus, Pen
 import type { Pattern, Project } from '../api';
 import { TAB_DRAG_TYPE, type CanvasApi } from './Canvas';
 import { Menu, Popover } from './ui';
-import { ColorPicker } from './ColorPicker';
+import { FillRow } from './FillRow';
 
 export const SWATCHES = ['#FFFFFF', '#F7F7F5', '#F1EEE8', '#ECEEF1', '#E8ECE6', '#2B2B29', '#191919', '#0D0D0F'];
 const DENSITIES = [
@@ -75,72 +75,17 @@ function TabName({ value, onDone }: { value: string; onDone: (v: string | null) 
   );
 }
 
-/**
- * Floating popup beside the background panel. It lives inside that panel's DOM so
- * clicks in it don't dismiss the panel, but is positioned against the viewport.
- */
-function PickerPopup({ open, children }: { open: boolean; children: React.ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [mounted, setMounted] = useState(open);
-  const [shown, setShown] = useState(false);
-  const [pos, setPos] = useState<{ left: number; top: number; side: 'right' | 'left' } | null>(null);
-
-  useEffect(() => {
-    if (open) setMounted(true);
-    else setShown(false);
-  }, [open]);
-
-  // Measure once, before the first paint, then animate in from that spot (no second nudge).
-  useLayoutEffect(() => {
-    if (!mounted) return;
-    const el = ref.current;
-    const host = el?.closest('.bg-pop');
-    if (!el || !host) return;
-    const h = host.getBoundingClientRect();
-    const r = el.getBoundingClientRect();
-    const gap = 10;
-    const right = h.right + gap + r.width <= window.innerWidth - 8;
-    setPos({
-      left: right ? h.right + gap : Math.max(8, h.left - gap - r.width),
-      top: Math.max(8, h.bottom - r.height),
-      side: right ? 'right' : 'left',
-    });
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => (raf2 = requestAnimationFrame(() => setShown(true))));
-    return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-    };
-  }, [mounted]);
-
-  if (!mounted) return null;
-  return (
-    <div
-      ref={ref}
-      className={`popover picker-pop${shown && open ? ' shown' : ''}${pos?.side === 'left' ? ' from-left' : ''}`}
-      style={pos ? { left: pos.left, top: pos.top } : { visibility: 'hidden' }}
-      role="dialog"
-      aria-label="Custom color"
-      onTransitionEnd={(e) => e.target === ref.current && e.propertyName === 'opacity' && !open && setMounted(false)}
-    >
-      {children}
-    </div>
-  );
-}
-
 export function Dock(p: Props) {
   const [tabMenu, setTabMenu] = useState<{ x: number; y: number; project: Project } | null>(null);
   const [bgOpen, setBgOpen] = useState(false);
   const [zoomOpen, setZoomOpen] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
-  const [hex, setHex] = useState(p.active.bgColor);
   const [pickerOpen, setPickerOpen] = useState(false);
   const bgBtn = useRef<HTMLButtonElement>(null);
   const zoomBtn = useRef<HTMLButtonElement>(null);
   const tabsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => setHex(p.active.bgColor), [p.active.bgColor]);
 
   useLayoutEffect(() => {
     tabsRef.current
@@ -350,30 +295,19 @@ export function Dock(p: Props) {
               />
             ))}
           </div>
-          <div className="hex-row">
-            <button
-              className={`swatch custom${pickerOpen ? ' on' : ''}`}
-              data-tip="Custom color"
-              aria-label="Custom color"
-              aria-expanded={pickerOpen}
-              onClick={() => setPickerOpen((o) => !o)}
-            />
-            <input
-              className="input hex"
-              value={hex}
-              spellCheck={false}
-              onChange={(e) => {
-                const v = e.target.value.startsWith('#') ? e.target.value : `#${e.target.value}`;
-                setHex(v);
-                if (/^#[0-9a-f]{6}$/i.test(v)) p.onBackground({ bgColor: v.toUpperCase() });
-              }}
-              onBlur={() => setHex(p.active.bgColor)}
-              onKeyDown={(e) => e.stopPropagation()}
+          <div className="pop-fill">
+            <FillRow
+              color={p.active.bgColor}
+              autoColor={p.active.bgColor}
+              allowAuto={false}
+              title="Canvas color"
+              swatches={SWATCHES}
+              open={pickerOpen}
+              onOpen={setPickerOpen}
+              onCommit={(c) => c && p.onBackground({ bgColor: c })}
+              onPreview={(c) => p.onBackground({ bgColor: c })}
             />
           </div>
-          <PickerPopup open={pickerOpen}>
-            <ColorPicker value={p.active.bgColor} onChange={(c) => p.onBackground({ bgColor: c })} showHex={false} />
-          </PickerPopup>
         </Popover>
       )}
 

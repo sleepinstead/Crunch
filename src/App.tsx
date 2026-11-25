@@ -6,7 +6,7 @@ import { Dock } from './components/Dock';
 import { ConfirmDialog, Dialog, Toasts, Tooltips, type ToastMsg } from './components/ui';
 import { SettingsPanel } from './components/SettingsPanel';
 import { TrashPanel } from './components/TrashPanel';
-import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from './settings';
+import { DEFAULT_SETTINGS, MOTION_SCALE, normalizeSettings, type Settings } from './settings';
 
 const ACTIVE_KEY = 'crunch.activeProject';
 const store = {
@@ -102,6 +102,11 @@ export function App() {
     if (settings.reduceMotion === 'on') document.documentElement.dataset.reduceMotion = 'on';
     else delete document.documentElement.dataset.reduceMotion;
   }, [settings.reduceMotion]);
+
+  // Animation speed: one multiplier used by panel, menu and popup durations in CSS.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--motion', String(MOTION_SCALE[settings.motionSpeed]));
+  }, [settings.motionSpeed]);
 
   useEffect(() => {
     if (activeId) store.set(ACTIVE_KEY, activeId);

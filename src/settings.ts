@@ -22,6 +22,7 @@ export interface Settings {
   // Appearance
   uiTheme: 'auto' | 'light' | 'dark';
   reduceMotion: 'system' | 'on';
+  motionSpeed: 'snappy' | 'normal' | 'relaxed';
   // Library
   trashDays: 0 | 30 | 90;
 }
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   textSize: 'medium',
   uiTheme: 'auto',
   reduceMotion: 'system',
+  motionSpeed: 'snappy',
   trashDays: 0,
 };
 
@@ -70,6 +72,7 @@ export function normalizeSettings(raw: Record<string, unknown>): Settings {
     textSize: oneOf(raw.textSize, ['small', 'medium', 'large'] as const, d.textSize),
     uiTheme: oneOf(raw.uiTheme, ['auto', 'light', 'dark'] as const, d.uiTheme),
     reduceMotion: oneOf(raw.reduceMotion, ['system', 'on'] as const, d.reduceMotion),
+    motionSpeed: oneOf(raw.motionSpeed, ['snappy', 'normal', 'relaxed'] as const, d.motionSpeed),
     trashDays: oneOf(raw.trashDays, [0, 30, 90] as const, d.trashDays),
   };
 }
@@ -82,3 +85,6 @@ export const TEXT_SIZE_PX = { small: 16, medium: 24, large: 40 } as const;
 /** Reduced motion: the app setting, or the system preference. */
 export const reducedMotion = () =>
   document.documentElement.dataset.reduceMotion === 'on' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** Multiplier for panel, menu and popup animation durations. */
+export const MOTION_SCALE = { snappy: 1, normal: 1.6, relaxed: 2.4 } as const;

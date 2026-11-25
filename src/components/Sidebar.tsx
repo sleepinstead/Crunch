@@ -807,7 +807,7 @@ export function Sidebar(p: Props) {
     timer.current = window.setTimeout(() => {
       peek.current = true;
       onSetOpen(true);
-    }, 140);
+    }, 80);
   };
   const leave = () => {
     window.clearTimeout(timer.current);

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 /* ---------- dismiss helpers ---------- */
 
@@ -63,10 +63,31 @@ export type MenuEntry =
 
 export function Menu({ x, y, entries, onClose }: { x: number; y: number; entries: MenuEntry[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  useDismiss(ref, onClose);
+  // Close immediately for the app, but let a copy fade out where it stood (no lingering state).
+  const close = useCallback(() => {
+    const el = ref.current;
+    if (el?.parentElement) {
+      const ghost = el.cloneNode(true) as HTMLElement;
+      ghost.classList.add('menu-out');
+      ghost.setAttribute('aria-hidden', 'true');
+      ghost.style.pointerEvents = 'none';
+      el.parentElement.appendChild(ghost);
+      window.setTimeout(() => ghost.remove(), 160);
+    }
+    onClose();
+  }, [onClose]);
+  useDismiss(ref, close);
   const pos = useClamp(ref, x, y, [entries.length]);
+  // Grow from the corner nearest the cursor (flips when the menu is pushed left/up by the screen edge).
+  const origin = `${pos.left < x - 1 ? 'right' : 'left'} ${pos.top < y - 1 ? 'bottom' : 'top'}`;
   return (
-    <div ref={ref} className="menu pop-in" style={pos} role="menu" onContextMenu={(e) => e.preventDefault()}>
+    <div
+      ref={ref}
+      className="menu menu-in"
+      style={{ ...pos, transformOrigin: origin }}
+      role="menu"
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {entries.map((e, i) =>
         e === 'sep' ? (
           <div key={i} className="menu-sep" />
@@ -77,7 +98,7 @@ export function Menu({ x, y, entries, onClose }: { x: number; y: number; entries
             className={`menu-item${e.danger ? ' danger' : ''}`}
             disabled={e.disabled}
             onClick={() => {
-              onClose();
+              close();
               e.onSelect();
             }}
           >

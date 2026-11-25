@@ -1,6 +1,7 @@
 /* Crunch — quiet, neutral chrome so the canvas does the talking. */
 
 :root {
+  --motion: 1;
   --font: 'Plus Jakarta Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   --surface: #ffffff;
@@ -600,7 +601,7 @@ svg {
 }
 
 .pop-in {
-  animation: pop 0.14s var(--ease);
+  animation: pop calc(0.14s * var(--motion)) var(--ease);
 }
 
 @keyframes pop {
@@ -911,8 +912,8 @@ svg {
   opacity: 0;
   pointer-events: none;
   transition:
-    transform 0.18s cubic-bezier(0.4, 0, 1, 1),
-    opacity 0.06s linear 0.12s;
+    transform calc(0.12s * var(--motion)) cubic-bezier(0.4, 0, 1, 1),
+    opacity calc(0.05s * var(--motion)) linear calc(0.07s * var(--motion));
 }
 
 .settings.shown {
@@ -921,15 +922,15 @@ svg {
   pointer-events: auto;
   /* Enter: snappy, with a short settle. */
   transition:
-    transform 0.26s cubic-bezier(0.2, 0.9, 0.3, 1),
-    opacity 0.08s linear;
+    transform calc(0.18s * var(--motion)) cubic-bezier(0.2, 0.9, 0.3, 1),
+    opacity calc(0.06s * var(--motion)) linear;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .settings,
   .settings.shown {
     transform: none;
-    transition: opacity 0.12s linear;
+    transition: opacity calc(0.12s * var(--motion)) linear;
   }
 }
 
@@ -1358,8 +1359,8 @@ svg {
   transform: translateX(-8px) scale(0.96);
   transform-origin: left bottom;
   transition:
-    opacity 0.12s ease-in,
-    transform 0.16s cubic-bezier(0.4, 0, 1, 1);
+    opacity calc(0.12s * var(--motion)) ease-in,
+    transform calc(0.16s * var(--motion)) cubic-bezier(0.4, 0, 1, 1);
   will-change: transform, opacity;
 }
 .picker-pop.from-left {
@@ -1371,8 +1372,8 @@ svg {
   transform: none;
   /* Enter: quick start, soft settle. */
   transition:
-    opacity 0.18s ease-out,
-    transform 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+    opacity calc(0.18s * var(--motion)) ease-out,
+    transform calc(0.32s * var(--motion)) cubic-bezier(0.32, 0.72, 0, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .picker-pop,
@@ -1500,11 +1501,11 @@ svg {
   box-shadow: var(--shadow-pop);
   overflow: hidden;
   transform: translateX(calc(-100% - 24px));
-  transition: transform 0.18s cubic-bezier(0.4, 0, 1, 1);
+  transition: transform calc(0.12s * var(--motion)) cubic-bezier(0.4, 0, 1, 1);
 }
 .sidebar.shown {
   transform: none;
-  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.3, 1);
+  transition: transform calc(0.18s * var(--motion)) cubic-bezier(0.2, 0.9, 0.3, 1);
 }
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
@@ -2162,4 +2163,37 @@ svg {
 .set-disabled {
   opacity: 0.4;
   pointer-events: none;
+}
+
+/* ---------- context menu motion (macOS / Figma-like) ---------- */
+
+.menu-in {
+  animation: menu-in calc(0.13s * var(--motion)) cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+.menu-out {
+  animation: menu-out calc(0.12s * var(--motion)) ease-in forwards;
+}
+@keyframes menu-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+.menu-item {
+  transition: background-color calc(0.06s * var(--motion));
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-in,
+  .menu-out {
+    animation: none;
+  }
+  .menu-out {
+    display: none;
+  }
 }

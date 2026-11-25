@@ -258,6 +258,17 @@ function Panel({
                 ]}
               />
             </Row>
+            <Row title="Animation speed" text="Panels, menus and popups.">
+              <Seg
+                value={s.motionSpeed}
+                onChange={(v) => onChange({ motionSpeed: v })}
+                options={[
+                  { value: 'snappy', label: 'Snappy' },
+                  { value: 'normal', label: 'Normal' },
+                  { value: 'relaxed', label: 'Relaxed' },
+                ]}
+              />
+            </Row>
             <Row title="Reduce motion">
               <Seg
                 value={s.reduceMotion}

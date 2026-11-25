@@ -88,6 +88,42 @@ const projectCols = (db.prepare('PRAGMA table_info(projects)').all() as { name: 
 if (!projectCols.includes('density')) db.exec('ALTER TABLE projects ADD COLUMN density REAL NOT NULL DEFAULT 1');
 if (!itemCols.includes('rotation')) db.exec('ALTER TABLE items ADD COLUMN rotation REAL NOT NULL DEFAULT 0');
 
+// Text items: asset_id becomes optional, which SQLite only allows by rebuilding the table.
+// A copy of the database is kept next to it first, just in case.
+if (!itemCols.includes('kind')) {
+  const dbFile = path.join(DATA_DIR, 'crunch.db');
+  db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
+  fs.copyFileSync(dbFile, path.join(DATA_DIR, `crunch.db.before-text-${Date.now()}.bak`));
+  db.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+    CREATE TABLE items_new (
+      id         TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      kind       TEXT NOT NULL DEFAULT 'image',
+      asset_id   TEXT REFERENCES assets(id),
+      text       TEXT,
+      font_size  REAL,
+      color      TEXT,
+      x          REAL NOT NULL,
+      y          REAL NOT NULL,
+      w          REAL NOT NULL,
+      h          REAL NOT NULL,
+      z          REAL NOT NULL DEFAULT 0,
+      rotation   REAL NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    INSERT INTO items_new (id, project_id, asset_id, x, y, w, h, z, rotation, created_at, updated_at)
+      SELECT id, project_id, asset_id, x, y, w, h, z, rotation, created_at, updated_at FROM items;
+    DROP TABLE items;
+    ALTER TABLE items_new RENAME TO items;
+    CREATE INDEX items_project ON items(project_id);
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
 export function tx<T>(fn: () => T): T {
   db.exec('BEGIN');
   try {

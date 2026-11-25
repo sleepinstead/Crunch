@@ -1389,3 +1389,37 @@ svg {
 .overlay:has(.sel-box.group) .sel-box:not(.group) {
   box-shadow: 0 0 0 calc(1px / var(--zoom)) color-mix(in srgb, var(--accent) 55%, transparent);
 }
+
+/* ---------- text ---------- */
+
+.item.text {
+  background: none;
+  overflow: visible;
+}
+[data-shadow] .item.text {
+  box-shadow: none;
+}
+.text-body {
+  display: inline-block;
+  min-width: 0.5em;
+  white-space: pre;
+  line-height: 1.25;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  outline: none;
+  cursor: default;
+}
+.item.editing .text-body {
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  caret-color: var(--accent);
+}
+.item.editing::after {
+  display: none;
+}
+
+.canvas.text-tool,
+.canvas.text-tool .item {
+  cursor: text;
+}

@@ -60,32 +60,40 @@ const projectJson = (p: ProjectRow) => ({
 interface ItemRow {
   id: string;
   project_id: string;
-  asset_id: string;
+  kind: string;
+  asset_id: string | null;
+  text: string | null;
+  font_size: number | null;
+  color: string | null;
   x: number;
   y: number;
   w: number;
   h: number;
   z: number;
   rotation: number;
-  file: string;
-  nw: number;
-  nh: number;
+  file: string | null;
+  nw: number | null;
+  nh: number | null;
   source_url: string | null;
 }
 
 const itemJson = (i: ItemRow) => ({
   id: i.id,
   projectId: i.project_id,
-  assetId: i.asset_id,
+  kind: i.kind === 'text' ? 'text' : 'image',
+  assetId: i.asset_id ?? '',
+  text: i.text,
+  fontSize: i.font_size,
+  color: i.color,
   x: i.x,
   y: i.y,
   w: i.w,
   h: i.h,
   z: i.z,
   rotation: i.rotation,
-  src: `/files/${i.file}`,
-  naturalW: i.nw,
-  naturalH: i.nh,
+  src: i.file ? `/files/${i.file}` : '',
+  naturalW: i.nw ?? i.w,
+  naturalH: i.nh ?? i.h,
   sourceUrl: i.source_url,
 });
 
@@ -210,7 +218,7 @@ api.post('/projects/reorder', (req, res) => {
 const trashItems = db.prepare(
   `INSERT OR REPLACE INTO trash (id, project_id, project_name, asset_id, x, y, w, h, z, rotation, deleted_at)
    SELECT i.id, i.project_id, p.name, i.asset_id, i.x, i.y, i.w, i.h, i.z, i.rotation, ?
-   FROM items i JOIN projects p ON p.id = i.project_id WHERE i.id = ?`,
+   FROM items i JOIN projects p ON p.id = i.project_id WHERE i.id = ? AND i.asset_id IS NOT NULL`,
 );
 
 // Removes the canvas. Its images move to Recently deleted.
@@ -319,7 +327,7 @@ api.get('/projects/:id/items', (req, res) => {
   const rows = db
     .prepare(
       `SELECT i.*, a.file, a.width AS nw, a.height AS nh, a.source_url
-       FROM items i JOIN assets a ON a.id = i.asset_id
+       FROM items i LEFT JOIN assets a ON a.id = i.asset_id
        WHERE i.project_id = ? ORDER BY i.z`,
     )
     .all(req.params.id) as unknown as ItemRow[];
@@ -332,20 +340,28 @@ api.put('/items', (req, res) => {
   if (!Array.isArray(list)) throw new HttpError(400, 'Expected an array of items.');
   const now = Date.now();
   const stmt = db.prepare(
-    `INSERT INTO items (id, project_id, asset_id, x, y, w, h, z, rotation, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO items (id, project_id, kind, asset_id, text, font_size, color, x, y, w, h, z, rotation, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET x = excluded.x, y = excluded.y, w = excluded.w, h = excluded.h,
-       z = excluded.z, rotation = excluded.rotation, updated_at = excluded.updated_at`,
+       z = excluded.z, rotation = excluded.rotation, text = excluded.text, font_size = excluded.font_size,
+       color = excluded.color, updated_at = excluded.updated_at`,
   );
   const untrash = db.prepare('DELETE FROM trash WHERE id = ?');
   tx(() => {
     for (const it of list) {
       if (!it || typeof it.id !== 'string') throw new HttpError(400, 'Invalid item.');
       untrash.run(it.id);
+      const isText = it.kind === 'text';
+      if (isText && (typeof it.text !== 'string' || it.text.length > 20000)) throw new HttpError(400, 'Invalid text.');
+      const color = typeof it.color === 'string' && /^#[0-9a-f]{6}$/i.test(it.color) ? it.color : null;
       stmt.run(
         it.id,
         String(it.projectId),
-        String(it.assetId),
+        isText ? 'text' : 'image',
+        isText ? null : String(it.assetId),
+        isText ? it.text : null,
+        isText ? num(it.fontSize, 'font size') : null,
+        isText ? color : null,
         num(it.x, 'x'),
         num(it.y, 'y'),
         num(it.w, 'w'),

@@ -41,6 +41,8 @@ const SHORTCUTS: [string, string][] = [
   ['⌥ drag', 'Duplicate while moving'],
   ['Drag outside a corner', 'Rotate (⇧ snaps 15°)'],
   ['⇧ R', 'Rotate 90°'],
+  ['T, then click', 'Add text'],
+  ['Double-click / ↵', 'Edit text'],
   [`${M} D`, 'Duplicate'],
   ['[  ]', 'Send back / bring front'],
   [`${M} Z`, 'Undo'],

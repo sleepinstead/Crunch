@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -14,6 +14,7 @@ import {
   RotateCw,
   MousePointer2,
   Trash2,
+  Type,
   Upload,
 } from 'lucide-react';
 import { api, type Asset, type Item, type Project, type View } from '../api';
@@ -24,6 +25,8 @@ import { Menu, UrlDialog, type MenuEntry } from './ui';
 
 export interface CanvasApi {
   zoom: number;
+  textTool: boolean;
+  setTextTool: (on: boolean) => void;
   zoomBy: (factor: number) => void;
   zoomTo: (zoom: number) => void;
   zoomToFit: () => void;
@@ -295,6 +298,105 @@ const ItemView = memo(function ItemView({ item }: { item: Item }) {
   );
 });
 
+const PLAINTEXT_OK = (() => {
+  const d = document.createElement('div');
+  try {
+    d.contentEditable = 'plaintext-only';
+  } catch {
+    return false;
+  }
+  return d.contentEditable === 'plaintext-only';
+})();
+
+/** A text item. Sizes itself to its content and reports that size back. */
+const TextView = memo(function TextView({
+  item,
+  editing,
+  dark,
+  onMeasure,
+  onDone,
+}: {
+  item: Item;
+  editing: boolean;
+  dark: boolean;
+  onMeasure: (id: string, w: number, h: number) => void;
+  onDone: (id: string, text: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  const measure = () => {
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    if (Math.abs(w - item.w) > 0.5 || Math.abs(h - item.h) > 0.5) onMeasure(item.id, w, h);
+  };
+  useLayoutEffect(measure);
+  useEffect(() => {
+    // Fonts can finish loading after first paint.
+    document.fonts?.ready.then(measure);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!editing || !el) return;
+    el.innerText = item.text ?? '';
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    measure();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
+  return (
+    <div
+      className={`item text${editing ? ' editing' : ''}`}
+      data-item-id={item.id}
+      style={{
+        transform: `translate(${item.x}px, ${item.y}px)${item.rotation ? ` rotate(${item.rotation}deg)` : ''}`,
+        fontSize: item.fontSize ?? 24,
+        color: item.color ?? (dark ? '#EDEDEC' : '#191919'),
+      }}
+    >
+      <div
+        ref={ref}
+        className="text-body"
+        contentEditable={editing ? (PLAINTEXT_OK ? 'plaintext-only' : true) : false}
+        onPaste={(e) => {
+          if (PLAINTEXT_OK) return;
+          // Keep pasted text plain where the browser can't enforce it.
+          e.preventDefault();
+          document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
+        }}
+        suppressContentEditableWarning
+        spellCheck={editing}
+        onInput={measure}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            // Leave editing but keep the text selected (Figma); don't let the canvas clear it.
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.blur();
+          }
+        }}
+        onBlur={(e) => {
+          if (!editing) return;
+          const text = e.currentTarget.innerText;
+          // Hand the DOM back to React before it re-renders the committed text.
+          e.currentTarget.textContent = '';
+          onDone(item.id, text);
+        }}
+      >
+        {editing ? null : item.text}
+      </div>
+    </div>
+  );
+});
+
 export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSignal }: Props) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -328,6 +430,16 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const [panning, setPanning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; kind: 'canvas' | 'item'; world: { x: number; y: number } } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [textTool, setTextToolState] = useState(false);
+  const textToolRef = useRef(false);
+  const setTextTool = (on: boolean) => {
+    textToolRef.current = on;
+    setTextToolState(on);
+  };
+  const editBefore = useRef<Item | null>(null);
+  const newTextId = useRef<string | null>(null);
+  const measureSave = useRef<number | undefined>(undefined);
   const [urlDialogAt, setUrlDialogAt] = useState<{ x: number; y: number } | null>(null);
 
   const mode = useRef<Mode | null>(null);
@@ -635,7 +747,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   );
 
   const copySelection = useCallback(async () => {
-    const sel = selectedItems();
+    const sel = selectedItems().filter((i) => i.kind !== 'text');
     if (!sel.length) return;
     const html = sel
       .map((i) => `<img src="${location.origin}${i.src}" ${CRUNCH_ASSET_ATTR}="${i.assetId}">`)
@@ -708,6 +820,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const created: Item[] = assets.map((a, i) => ({
         id: uid(),
         projectId: project.id,
+        kind: 'image',
         assetId: a.id,
         ...rects[i],
         z: ++z,
@@ -771,6 +884,91 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     }
     return true;
   };
+
+  /* ---------- text ---------- */
+
+  const createText = (at: { x: number; y: number }) => {
+    const fontSize = 24 / viewRef.current.zoom;
+    const it: Item = {
+      id: uid(),
+      projectId: project.id,
+      kind: 'text',
+      assetId: '',
+      text: '',
+      fontSize,
+      color: null,
+      x: at.x,
+      y: at.y - fontSize * 0.65,
+      w: 2,
+      h: fontSize * 1.3,
+      z: maxZ() + 1,
+      rotation: 0,
+      src: '',
+      naturalW: 0,
+      naturalH: 0,
+      sourceUrl: null,
+    };
+    newTextId.current = it.id;
+    editBefore.current = null;
+    setItems({ ...itemsRef.current, [it.id]: it });
+    setSelection(new Set([it.id]));
+    setTextTool(false);
+    setEditingId(it.id);
+  };
+
+  const startEdit = (id: string) => {
+    const it = itemsRef.current[id];
+    if (!it || it.kind !== 'text') return;
+    newTextId.current = null;
+    editBefore.current = it;
+    setSelection(new Set([id]));
+    setEditingId(id);
+  };
+
+  const finishEdit = useCallback(
+    (id: string, raw: string) => {
+      setEditingId(null);
+      const it = itemsRef.current[id];
+      if (!it) return;
+      const text = raw.replace(/\n$/, '');
+      const isNew = newTextId.current === id;
+      const before = editBefore.current;
+      newTextId.current = null;
+      editBefore.current = null;
+      if (!text.trim()) {
+        if (isNew) {
+          const next = { ...itemsRef.current };
+          delete next[id];
+          setItems(next);
+          setSelection(new Set());
+        } else if (before) {
+          commit({ [id]: before }, { [id]: null });
+          setSelection(new Set());
+        }
+        return;
+      }
+      if (!isNew && before && before.text === text) return;
+      commit({ [id]: isNew ? null : before }, { [id]: { ...it, text } });
+    },
+    [commit],
+  );
+
+  // Text boxes grow with their content; keep the stored size in step (no undo step for this).
+  const onMeasure = useCallback(
+    (id: string, w: number, h: number) => {
+      const it = itemsRef.current[id];
+      if (!it || mode.current) return;
+      const next = { ...it, w, h };
+      setItems({ ...itemsRef.current, [id]: next });
+      if (newTextId.current === id) return;
+      window.clearTimeout(measureSave.current);
+      measureSave.current = window.setTimeout(() => {
+        const cur = itemsRef.current[id];
+        if (cur && newTextId.current !== id) persist({ [id]: cur });
+      }, 300);
+    },
+    [persist],
+  );
 
   const pointerWorld = () => (pointer.current.inside ? toWorld(pointer.current.x, pointer.current.y) : undefined);
 
@@ -860,7 +1058,16 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         e.preventDefault();
         deleteSelection();
       } else if (k === 'escape') {
-        if (!document.querySelector('.settings.shown')) setSelection(new Set());
+        if (textToolRef.current) setTextTool(false);
+        else if (!document.querySelector('.settings.shown')) setSelection(new Set());
+      } else if (k === 't' && !e.shiftKey && !e.altKey) {
+        setTextTool(!textToolRef.current);
+      } else if (k === 'enter' && selRef.current.size === 1 && !onControl(e.target)) {
+        const id = [...selRef.current][0];
+        if (itemsRef.current[id]?.kind === 'text') {
+          e.preventDefault();
+          startEdit(id);
+        }
       } else if (e.shiftKey && e.code === 'Digit1') {
         zoomToFit();
       } else if (e.shiftKey && e.code === 'Digit0') {
@@ -936,6 +1143,15 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     if (e.button !== 0 && e.button !== 1) return;
     if (anim.current) cancelAnimationFrame(anim.current);
     const target = e.target as HTMLElement;
+    // Clicking inside the text being edited places the caret.
+    if (target.closest('.item.editing')) return;
+    if (textToolRef.current && e.button === 0 && !spaceRef.current) {
+      const onText = target.closest<HTMLElement>('.item.text');
+      if (onText) startEdit(onText.dataset.itemId!);
+      else createText(toWorld(e.clientX, e.clientY));
+      e.preventDefault();
+      return;
+    }
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -1113,7 +1329,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const hy = (m.dirY * h) / 2;
       const cx = m.ax + hx * cos - hy * sin;
       const cy = m.ay + hx * sin + hy * cos;
-      setItems({ ...itemsRef.current, [m.id]: { ...m.before, w, h, x: cx - w / 2, y: cy - h / 2 } });
+      const fontSize = m.before.kind === 'text' ? (m.before.fontSize ?? 24) * (w / m.before.w) : m.before.fontSize;
+      setItems({ ...itemsRef.current, [m.id]: { ...m.before, w, h, x: cx - w / 2, y: cy - h / 2, fontSize } });
     } else if (m.type === 'groupResize') {
       const p = toWorld(e.clientX, e.clientY);
       const sx = (p.x - m.ax) * m.dirX;
@@ -1131,7 +1348,8 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         const cy = m.ay + (it.y + it.h / 2 - m.ay) * k;
         const nw = it.w * k;
         const nh = it.h * k;
-        next[it.id] = { ...it, w: nw, h: nh, x: cx - nw / 2, y: cy - nh / 2 };
+        const fontSize = it.kind === 'text' ? (it.fontSize ?? 24) * k : it.fontSize;
+        next[it.id] = { ...it, w: nw, h: nh, x: cx - nw / 2, y: cy - nh / 2, fontSize };
       }
       setItems(next);
     } else if (m.type === 'rotate') {
@@ -1158,9 +1376,21 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     }
   };
 
+  /** After a resize, snap text boxes to the size their text actually renders at. */
+  const remeasureText = (ids: string[]) =>
+    requestAnimationFrame(() => {
+      for (const id of ids) {
+        const it = itemsRef.current[id];
+        const el = rootRef.current?.querySelector<HTMLElement>(`[data-item-id="${id}"] .text-body`);
+        if (it?.kind === 'text' && el) onMeasure(id, el.offsetWidth, el.offsetHeight);
+      }
+    });
+
   const endPointer = () => {
     const m = mode.current;
     mode.current = null;
+    if (m?.type === 'resize') remeasureText([m.id]);
+    if (m?.type === 'groupResize') remeasureText(Object.keys(m.base));
     setInteracting(false);
     setPanning(false);
     setRotLabel(null);
@@ -1184,10 +1414,15 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   };
 
   const onDoubleClick = (e: React.MouseEvent) => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-item-id]');
+    // Pointer capture reports the event on the canvas itself, so look up what's really under the pointer.
+    const target = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null) ?? (e.target as HTMLElement);
+    if (target.closest('.item.editing, [data-handle], [data-rotate]')) return;
+    const el = target.closest<HTMLElement>('[data-item-id]');
     if (!el) return;
     const it = itemsRef.current[el.dataset.itemId!];
-    if (it) fitRect(aabb(it), Math.max(1, it.naturalW / it.w));
+    if (!it) return;
+    if (it.kind === 'text') startEdit(it.id);
+    else fitRect(aabb(it), Math.max(1, it.naturalW / it.w));
   };
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -1234,7 +1469,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const empty = loaded && sorted.length === 0 && pending.length === 0;
   const dark = isDark(project.bgColor);
 
-  const canvasApi: CanvasApi = { zoom: view.zoom, zoomBy, zoomTo, zoomToFit };
+  const canvasApi: CanvasApi = { zoom: view.zoom, zoomBy, zoomTo, zoomToFit, textTool, setTextTool };
 
   const menuEntries = (): MenuEntry[] => {
     if (!menu) return [];
@@ -1250,6 +1485,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
           },
         },
         { label: 'Add from URL…', icon: <Link2 />, onSelect: () => setUrlDialogAt(menu.world) },
+        { label: 'Add text', icon: <Type />, shortcut: 'T', onSelect: () => createText(menu.world) },
         'sep',
         {
           label: 'Select all',
@@ -1270,9 +1506,14 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         ? ([{ label: 'Reset rotation', icon: <RotateCcw />, onSelect: () => rotateSelection('reset') }] as MenuEntry[])
         : []),
       'sep',
-      { label: 'Copy', icon: <Copy />, shortcut: `${MOD}C`, onSelect: copySelection },
+      ...(one?.kind === 'text'
+        ? ([{ label: 'Edit text', icon: <Type />, shortcut: '↵', onSelect: () => startEdit(one.id) }] as MenuEntry[])
+        : []),
+      ...(selected.some((i) => i.kind !== 'text')
+        ? ([{ label: 'Copy', icon: <Copy />, shortcut: `${MOD}C`, onSelect: copySelection }] as MenuEntry[])
+        : []),
       { label: 'Duplicate', icon: <CopyPlus />, shortcut: `${MOD}D`, onSelect: duplicateSelection },
-      ...(one
+      ...(one && one.kind !== 'text'
         ? ([
             'sep',
             { label: 'Open image', icon: <ImageIcon />, onSelect: () => window.open(one.src, '_blank', 'noopener') },
@@ -1292,13 +1533,13 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     ];
   };
 
-  const cursor = panning ? 'grabbing' : spaceDown ? 'grab' : undefined;
+  const cursor = panning ? 'grabbing' : spaceDown ? 'grab' : textTool ? 'text' : undefined;
 
   return (
     <>
       <div
         ref={rootRef}
-        className="canvas"
+        className={`canvas${textTool ? ' text-tool' : ''}`}
         data-tone={dark ? 'dark' : 'light'}
         style={{ ...backgroundStyle(project, bgOffset), cursor }}
         onPointerDown={onPointerDown}
@@ -1316,9 +1557,20 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
           className={`world${interacting ? ' busy' : ''}`}
           style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`, ['--zoom' as string]: view.zoom }}
         >
-          {sorted.map((it) => (
-            <ItemView key={it.id} item={it} />
-          ))}
+          {sorted.map((it) =>
+            it.kind === 'text' ? (
+              <TextView
+                key={it.id}
+                item={it}
+                editing={editingId === it.id}
+                dark={dark}
+                onMeasure={onMeasure}
+                onDone={finishEdit}
+              />
+            ) : (
+              <ItemView key={it.id} item={it} />
+            ),
+          )}
           {pending.map((p) => (
             <div
               key={p.id}
@@ -1338,14 +1590,17 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
                 }}
               >
                 {selected.length === 1 &&
+                  editingId !== it.id &&
                   (['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
                     <div key={`r${c}`} className={`rot ${c}`} data-rotate={c} data-for={it.id} />
                   ))}
                 {selected.length === 1 &&
+                  editingId !== it.id &&
                   (['n', 'e', 's', 'w'] as const).map((e) => (
                     <div key={`e${e}`} className={`edge ${e}`} data-handle={e} data-for={it.id} />
                   ))}
                 {selected.length === 1 &&
+                  editingId !== it.id &&
                   (['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
                     <div key={c} className={`handle ${c}`} data-handle={c} data-for={it.id} />
                   ))}
@@ -1406,6 +1661,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         )}
         {selected.length > 0 &&
           !marquee &&
+          !editingId &&
           (() => {
             const one = selected.length === 1 ? selected[0] : null;
             let x: number, y: number, deg = 0, w: number, h: number;

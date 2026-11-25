@@ -28,7 +28,13 @@ export interface Asset {
 export interface Item {
   id: string;
   projectId: string;
+  kind: 'image' | 'text';
   assetId: string;
+  /** Text items only. */
+  text?: string | null;
+  fontSize?: number | null;
+  /** null = follow the canvas (light text on dark backgrounds, dark on light). */
+  color?: string | null;
   x: number;
   y: number;
   w: number;

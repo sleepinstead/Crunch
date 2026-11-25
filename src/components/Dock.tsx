@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Grid3x3, Grip, Keyboard, Settings2, Archive, Maximize, Minus, Pencil, Plus, Search, Square, Trash2 } from 'lucide-react';
+import { Grid3x3, Grip, Keyboard, Settings2, Archive, Type, Maximize, Minus, Pencil, Plus, Search, Square, Trash2 } from 'lucide-react';
 import type { Pattern, Project } from '../api';
 import { TAB_DRAG_TYPE, type CanvasApi } from './Canvas';
 import { Menu, Popover } from './ui';
@@ -244,6 +244,18 @@ export function Dock(p: Props) {
 
         <div className="dock-sep" />
 
+        <button
+          className={`icon-btn${p.canvas.textTool ? ' on' : ''}`}
+          onClick={(e) => {
+            e.currentTarget.blur();
+            p.canvas.setTextTool(!p.canvas.textTool);
+          }}
+          title="Text (T)"
+          aria-label="Text"
+          aria-pressed={p.canvas.textTool}
+        >
+          <Type />
+        </button>
         <button
           ref={bgBtn}
           className={`icon-btn${bgOpen ? ' on' : ''}`}

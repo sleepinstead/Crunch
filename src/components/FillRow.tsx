@@ -140,6 +140,8 @@ function FillPopup({
     };
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // Close only the picker, not the popover or panel it sits in.
+        e.stopImmediatePropagation();
         e.stopPropagation();
         onClose();
       }
@@ -175,6 +177,7 @@ function FillPopup({
           <button
             key={c}
             className={`swatch small${!isAuto && value.toUpperCase() === c ? ' on' : ''}`}
+            aria-pressed={!isAuto && value.toUpperCase() === c}
             style={{ background: c }}
             aria-label={c}
             data-tip={c}

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Project, type View } from './api';
 import { isDark } from './color';
 import { Canvas } from './components/Canvas';
@@ -7,12 +8,39 @@ import { ConfirmDialog, Dialog, Toasts, Tooltips, type ToastMsg } from './compon
 import { SettingsPanel } from './components/SettingsPanel';
 import { Onboarding, ONBOARDED_KEY } from './components/Onboarding';
 import { TrashPanel } from './components/TrashPanel';
-// The landing page is the front door ("/"), so it ships with the app: no flash of canvas while it loads.
-import Landing from './landing/Landing';
+// The landing page loads as its own chunk; while it does, a page-coloured cover hides the canvas.
+const Landing = lazy(() => import('./landing/Landing'));
 import { DEFAULT_SETTINGS, MOTION_SCALE, normalizeSettings, type Settings } from './settings';
 
 /** "/" is the landing page; "/app" is the canvas. */
 const isLandingPath = () => location.pathname !== '/app';
+
+/** Set once the landing page has been shown; later visits to "/" open the canvas. */
+const VISITED_KEY = 'crunch.visited';
+const hasVisited = () => {
+  try {
+    return !!localStorage.getItem(VISITED_KEY);
+  } catch {
+    return false;
+  }
+};
+const markVisited = () => {
+  try {
+    localStorage.setItem(VISITED_KEY, '1');
+  } catch {
+    /* private mode: the landing simply shows again next time */
+  }
+};
+
+/** First visit: the landing page. After that, "/" goes straight to the canvas. */
+const initialLanding = () => {
+  if (!isLandingPath()) return false;
+  if (hasVisited()) {
+    history.replaceState(null, '', '/app' + location.search);
+    return false;
+  }
+  return true;
+};
 
 const ACTIVE_KEY = 'crunch.activeProject';
 const store = {
@@ -67,7 +95,10 @@ export function App() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [panel, setPanel] = useState<'settings' | 'trash' | null>(null);
   // Real paths, so a reload, back/forward or a shared link keeps the page you were on.
-  const [landing, setLanding] = useState(isLandingPath);
+  const [landing, setLanding] = useState(initialLanding);
+  useEffect(() => {
+    if (landing) markVisited();
+  }, [landing]);
   // Only animate the landing in when it covers a canvas the user was looking at.
   const [landingFromApp, setLandingFromApp] = useState(false);
   useEffect(() => {
@@ -99,15 +130,20 @@ export function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === 'error' ? 6000 : 2600);
   }, []);
 
+  const loadProjects = useCallback(
+    () =>
+      api
+        .listProjects()
+        .then((ps) => {
+          setProjects(ps);
+          setActiveId((cur) => (ps.some((p) => p.id === cur) ? cur : ps[0].id));
+        })
+        .catch((err) => toast(`Couldn’t load boards: ${err.message}`, 'error')),
+    [toast],
+  );
   useEffect(() => {
-    api
-      .listProjects()
-      .then((ps) => {
-        setProjects(ps);
-        setActiveId((cur) => (ps.some((p) => p.id === cur) ? cur : ps[0].id));
-      })
-      .catch((err) => toast(`Couldn’t load projects: ${err.message}`, 'error'));
-  }, [toast]);
+    loadProjects();
+  }, [loadProjects]);
 
   useEffect(() => {
     api
@@ -247,9 +283,12 @@ export function App() {
     [toast],
   );
 
-  // ⌥1–9 switches project; ? shows shortcuts.
+  // ⌥1–9 switches project; ? shows shortcuts. None of them apply while the landing page is up.
+  const landingRef = useRef(landing);
+  landingRef.current = landing;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (landingRef.current) return;
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
         e.preventDefault();
         setPanel((p) => (p === 'settings' ? null : 'settings'));
@@ -280,56 +319,71 @@ export function App() {
   return (
     <div
       className="app"
-      data-tone={
-        settings.uiTheme === 'auto' ? (active && isDark(active.bgColor) ? 'dark' : 'light') : settings.uiTheme
-      }
+      data-tone={settings.uiTheme === 'auto' ? (active && isDark(active.bgColor) ? 'dark' : 'light') : settings.uiTheme}
       data-shadow={settings.imageShadow || undefined}
       style={{ ['--item-radius' as string]: `${settings.imageRadius}px` }}
     >
-      {active && projects && (
-        <Canvas
-          key={active.id}
-          project={active}
-          onViewSaved={onViewSaved}
-          toast={toast}
-          settings={settings}
-          reloadSignal={reloadSignal}
-          chrome={(canvas, interacting) => (
-            <Dock
-              projects={projects}
-              active={active}
-              renameId={renameId}
-              setRenameId={setRenameId}
-              onSelect={setActiveId}
-              onCreate={create}
-              onRename={(id, name) => save(id, { name })}
-              onDelete={setConfirmDelete}
-              onReorder={reorder}
-              onBackground={(patch) => save(active.id, patch)}
-              onShowKeys={() => setShowKeys(true)}
-              settingsOpen={settingsOpen}
-              onToggleSettings={() => togglePanel('settings')}
-              trashOpen={panel === 'trash'}
-              onToggleTrash={() => togglePanel('trash')}
-              canvas={canvas}
-              quiet={interacting && settings.fadeDock}
-            />
-          )}
-        />
+      {/* Behind the landing page the app is inert: no focus, no clicks, no screen reader. */}
+      <div className="app-layer" inert={landing}>
+        {active && projects && (
+          <Canvas
+            key={active.id}
+            project={active}
+            onViewSaved={onViewSaved}
+            toast={toast}
+            settings={settings}
+            reloadSignal={reloadSignal}
+            chrome={(canvas, interacting) => (
+              <Dock
+                projects={projects}
+                active={active}
+                renameId={renameId}
+                setRenameId={setRenameId}
+                onSelect={setActiveId}
+                onCreate={create}
+                onRename={(id, name) => save(id, { name })}
+                onDelete={setConfirmDelete}
+                onReorder={reorder}
+                onBackground={(patch) => save(active.id, patch)}
+                onShowKeys={() => setShowKeys(true)}
+                settingsOpen={settingsOpen}
+                onToggleSettings={() => togglePanel('settings')}
+                trashOpen={panel === 'trash'}
+                onToggleTrash={() => togglePanel('trash')}
+                canvas={canvas}
+                quiet={interacting && settings.fadeDock}
+              />
+            )}
+          />
+        )}
+        {/* The name sits on the canvas, so it takes the canvas's tone, not the interface theme. */}
+        {settings.showName && (
+          <button
+            className="brand"
+            data-tone={active && isDark(active.bgColor) ? 'dark' : 'light'}
+            onClick={openLanding}
+            data-tip="About Crunch"
+          >
+            Crunch
+          </button>
+        )}
+      </div>
+      {landing && (
+        <Suspense fallback={<div className="landing-cover" />}>
+          <Landing onOpenApp={closeLanding} animateIn={landingFromApp} />
+        </Suspense>
       )}
-      {/* The name sits on the canvas, so it takes the canvas's tone, not the interface theme. */}
-      {settings.showName && (
-        <button
-          className="brand"
-          data-tone={active && isDark(active.bgColor) ? 'dark' : 'light'}
-          onClick={openLanding}
-          data-tip="About Crunch"
-        >
-          Crunch
-        </button>
-      )}
-      {landing && <Landing onOpenApp={closeLanding} animateIn={landingFromApp} />}
-      <SettingsPanel open={settingsOpen} settings={settings} onChange={changeSettings} onClose={closePanel} onShowTour={showTour} />
+      <SettingsPanel
+        open={settingsOpen}
+        settings={settings}
+        onChange={changeSettings}
+        onClose={closePanel}
+        onShowTour={showTour}
+        onImported={(message, failed) => {
+          toast(message, failed ? 'error' : 'info');
+          if (!failed) loadProjects();
+        }}
+      />
       {tour && !landing && <Onboarding onClose={() => setTour(false)} />}
       <TrashPanel
         open={panel === 'trash'}
@@ -350,15 +404,20 @@ export function App() {
       {confirmDelete && (
         <ConfirmDialog
           title={`Delete “${confirmDelete.name}”?`}
-          text="This removes the project and its canvas. Its images move to Recently deleted."
-          confirmLabel="Delete project"
+          text="This removes the board. Its images and text move to Recently deleted, where you can restore them."
+          confirmLabel="Delete board"
           onConfirm={() => remove(confirmDelete)}
           onClose={() => setConfirmDelete(null)}
         />
       )}
       {showKeys && (
         <Dialog onClose={() => setShowKeys(false)} width={400}>
-          <div className="dialog-title">Shortcuts</div>
+          <div className="dialog-head">
+            <div className="dialog-title">Shortcuts</div>
+            <button className="icon-btn" onClick={() => setShowKeys(false)} aria-label="Close shortcuts">
+              <X size={16} />
+            </button>
+          </div>
           <dl className="keys">
             {SHORTCUTS.map(([k, label]) => (
               <div key={label + k} className="keys-row">

@@ -11,7 +11,7 @@
   --border-strong: #dcdcd9;
   --text: #191919;
   --text-2: #5f5f5c;
-  --text-3: #9b9b97;
+  --text-3: #767672; /* 4.5:1 on white */
   --primary: #171717;
   --primary-text: #ffffff;
   --accent: #2383e2;
@@ -39,7 +39,7 @@
   --border-strong: #dcdcd9;
   --text: #191919;
   --text-2: #5f5f5c;
-  --text-3: #9b9b97;
+  --text-3: #767672; /* 4.5:1 on white */
   --primary: #171717;
   --primary-text: #ffffff;
   --accent: #2383e2;
@@ -64,7 +64,7 @@
   --border-strong: #454543;
   --text: #ededec;
   --text-2: #b4b4b0;
-  --text-3: #7c7c78;
+  --text-3: #9a9a96; /* 4.5:1 on the dark surface */
   --primary: #f2f2f1;
   --primary-text: #161616;
   --accent: #4a9ff0;
@@ -449,6 +449,10 @@ svg {
   transition: background-color 0.12s, box-shadow 0.12s, opacity 0.12s;
 }
 
+a.btn {
+  color: var(--text);
+  text-decoration: none;
+}
 .btn.primary {
   background: var(--primary);
   color: var(--primary-text);
@@ -918,12 +922,15 @@ svg {
   left: 50%;
   bottom: 74px;
   transform: translateX(-50%);
-  z-index: 200;
+  z-index: 500; /* above the landing page and the tour, so errors are never hidden */
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 6px;
   pointer-events: none;
+}
+.toasts > div {
+  display: contents;
 }
 .toast {
   max-width: min(480px, calc(100vw - 32px));
@@ -1023,6 +1030,7 @@ svg {
   border-bottom: 1px solid var(--border);
 }
 .settings-title {
+  margin: 0;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.01em;
@@ -1101,6 +1109,8 @@ svg {
   height: 20px;
   border-radius: 999px;
   background: var(--border-strong);
+  /* The off state needs a visible edge (3:1 against the panel). */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 35%, transparent);
   transition: background-color 0.15s var(--ease);
 }
 .toggle span {
@@ -1273,11 +1283,17 @@ svg {
   padding-top: 14px;
 }
 .trash-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
   margin-top: 40px;
   text-align: center;
   color: var(--text-3);
 }
 .trash-grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 12px;
@@ -1322,7 +1338,40 @@ svg {
 .icon-btn.danger:hover {
   color: var(--danger);
 }
-.trash-card figcaption {
+/* Deleted text: shown as a small note, labelled, so it reads as text rather than an empty tile. */
+.trash-text {
+  position: absolute;
+  inset: 1px; /* keeps the tile's 1px border visible around the note */
+  border-radius: 9px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+  padding: 14px;
+  background: var(--surface);
+}
+.trash-text p {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.trash-kind {
+  justify-self: start;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-sunk);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.trash-card .trash-caption {
   display: flex;
   justify-content: space-between;
   gap: 8px;
@@ -1803,8 +1852,19 @@ svg {
   opacity: 0;
 }
 .layer:hover .layer-actions,
+.layer:focus-within .layer-actions,
 .layer-act.on {
   opacity: 1;
+}
+/* Touch screens have no hover: keep lock and hide reachable. */
+@media (hover: none) {
+  .layer-actions {
+    opacity: 1;
+  }
+}
+.layer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 .layer-actions:has(.on) {
   opacity: 1;
@@ -1825,8 +1885,10 @@ svg {
   background: var(--surface-sunk);
   color: var(--text);
 }
-.layer:not(:hover) .layer-act:not(.on) {
-  visibility: hidden;
+@media (hover: hover) {
+  .layer:not(:hover):not(:focus-within) .layer-act:not(.on) {
+    visibility: hidden;
+  }
 }
 
 /* design */
@@ -2302,4 +2364,52 @@ svg {
 }
 .set-row .fill-row + .swatches {
   margin-top: 8px;
+}
+
+/* A board that failed to load: say so, offer a retry, and keep it from looking empty and editable. */
+.canvas-error {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  z-index: 5;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 20px 24px;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: var(--text-2);
+}
+.canvas-error strong {
+  color: var(--text);
+}
+
+/* Wraps the canvas and its chrome so the landing page can make them inert without changing layout. */
+.app-layer {
+  display: contents;
+}
+/* Shown for the moment the landing page's code is loading, so the canvas never flashes first. */
+.landing-cover {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: #fbfbfa;
+}
+
+.dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* Recently deleted: breathing room under the header, and between cards and their captions. */
+.settings .trash-body {
+  padding-top: 14px;
+}
+.trash-grid {
+  row-gap: 16px;
 }

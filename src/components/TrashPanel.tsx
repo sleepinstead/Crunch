@@ -72,18 +72,33 @@ function Panel({
   toast: (text: string, tone?: 'info' | 'error') => void;
 }) {
   const ref = useRef<HTMLElement>(null);
+  const closeBtn = useRef<HTMLButtonElement>(null);
   const [items, setItems] = useState<TrashItem[] | null>(null);
-  const [confirm, setConfirm] = useState<{ ids: string[] } | { all: true } | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [confirm, setConfirm] = useState<{ ids: string[] } | { before: number; count: number } | null>(null);
 
-  const load = () =>
-    api
+  const load = () => {
+    setFailed(false);
+    return api
       .listTrash()
       .then(setItems)
-      .catch((err) => toast(err.message, 'error'));
+      .catch(() => setFailed(true));
+  };
 
   useEffect(() => {
     if (open) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  // Focus moves into the drawer when it opens and back to whatever opened it when it closes.
+  useEffect(() => {
+    if (!open) return;
+    const back = document.activeElement as HTMLElement | null;
+    const t = window.setTimeout(() => closeBtn.current?.focus({ preventScroll: true }), 60);
+    return () => {
+      window.clearTimeout(t);
+      if (back && document.contains(back) && ref.current?.contains(document.activeElement)) back.focus({ preventScroll: true });
+    };
   }, [open]);
 
   useEffect(() => {
@@ -103,21 +118,27 @@ function Panel({
   }, [open, onClose]);
 
   const restore = async (ids: string[]) => {
-    if (!activeProjectId) return;
+    if (!activeProjectId) {
+      toast('Open a board first, then restore.', 'error');
+      return;
+    }
     try {
       const { restored } = await api.restoreTrash(ids, activeProjectId);
       setItems((list) => list && list.filter((i) => !ids.includes(i.id)));
       onRestored(restored);
-      toast(restored.length > 1 ? `Restored ${restored.length} images` : 'Image restored');
+      toast(restored.length > 1 ? `Restored ${restored.length} layers` : 'Restored');
     } catch (err) {
       toast((err as Error).message, 'error');
     }
   };
 
-  const purge = async (target: { ids: string[] } | { all: true }) => {
+  const purge = async (target: { ids: string[] } | { before: number }) => {
     try {
       await api.purgeTrash(target);
-      setItems((list) => ('all' in target ? [] : list && list.filter((i) => !target.ids.includes(i.id))));
+      setItems(
+        (list) =>
+          list && ('before' in target ? list.filter((i) => i.deletedAt > target.before) : list.filter((i) => !target.ids.includes(i.id))),
+      );
       toast('Deleted forever');
     } catch (err) {
       toast((err as Error).message, 'error');
@@ -125,6 +146,7 @@ function Panel({
   };
 
   const count = items?.length ?? 0;
+  const label = (t: TrashItem) => t.name || (t.kind === 'text' ? `“${(t.text ?? '').slice(0, 40)}”` : 'image') + ` from ${t.projectName}`;
 
   return (
     <aside
@@ -137,53 +159,63 @@ function Panel({
     >
       <header className="settings-head">
         <div>
-          <div className="settings-title">Recently deleted</div>
-          <div className="settings-sub">Images removed from canvases stay here until you delete them forever.</div>
+          <h2 className="settings-title">Recently deleted</h2>
+          <div className="settings-sub">Layers removed from boards stay here until you delete them forever.</div>
         </div>
-        <button className="icon-btn" onClick={onClose} aria-label="Close recently deleted">
+        <button ref={closeBtn} className="icon-btn" onClick={onClose} aria-label="Close recently deleted">
           <X />
         </button>
       </header>
 
-      <div className="settings-body trash-body">
-        {items === null ? null : count === 0 ? (
-          <div className="trash-empty">Nothing here. Deleted images will show up in this list.</div>
+      <div className="settings-body trash-body" aria-busy={items === null && !failed}>
+        {failed ? (
+          <div className="trash-empty" role="alert">
+            Couldn’t load Recently deleted.{' '}
+            <button className="btn secondary small" onClick={load}>
+              Try again
+            </button>
+          </div>
+        ) : items === null ? (
+          <div className="trash-empty">Loading…</div>
+        ) : count === 0 ? (
+          <div className="trash-empty">Nothing here. Deleted images and text will show up in this list.</div>
         ) : (
-          <div className="trash-grid">
+          <ul className="trash-grid">
             {items.map((t) => (
-              <figure key={t.id} className="trash-card">
+              <li key={t.id} className="trash-card">
                 <div className="trash-thumb">
-                  <img
-                    src={t.src}
-                    alt=""
-                    loading="lazy"
-                    draggable={false}
-                    onError={(e) => e.currentTarget.classList.add('missing')}
-                  />
+                  {t.kind === 'text' ? (
+                    <div className="trash-text">
+                      <span className="trash-kind">Text</span>
+                      <p>{t.text}</p>
+                    </div>
+                  ) : (
+                    <img src={t.src} alt="" loading="lazy" draggable={false} onError={(e) => e.currentTarget.classList.add('missing')} />
+                  )}
                   <div className="trash-actions">
-                    <button className="btn secondary small" onClick={() => restore([t.id])} data-tip="Restore">
+                    <button className="btn secondary small" onClick={() => restore([t.id])} aria-label={`Restore ${label(t)}`}>
                       <RotateCcw size={13} /> Restore
                     </button>
                     <button
                       className="icon-btn danger"
                       onClick={() => setConfirm({ ids: [t.id] })}
                       data-tip="Delete forever"
-                      aria-label="Delete forever"
+                      aria-label={`Delete ${label(t)} forever`}
                     >
                       <Trash2 />
                     </button>
                   </div>
                 </div>
-                <figcaption>
+                <div className="trash-caption">
                   <span className="trash-project">
                     {t.projectName}
                     {!t.projectExists && <em> (deleted)</em>}
                   </span>
                   <span className="trash-when">{ago(t.deletedAt)}</span>
-                </figcaption>
-              </figure>
+                </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
       </div>
 
@@ -192,7 +224,16 @@ function Panel({
           <button className="btn secondary" onClick={() => restore(items!.map((i) => i.id))}>
             Restore all
           </button>
-          <button className="btn danger-ghost" onClick={() => setConfirm({ all: true })}>
+          <button
+            className="btn danger-ghost"
+            // Only what is listed now: anything deleted later (say, in another tab) stays.
+            onClick={() =>
+              setConfirm({
+                before: Math.max(...items!.map((i) => i.deletedAt)),
+                count,
+              })
+            }
+          >
             Empty
           </button>
         </footer>
@@ -200,13 +241,13 @@ function Panel({
 
       {confirm &&
         createPortal(
-        <ConfirmDialog
-          title={'all' in confirm ? `Delete all ${count} images forever?` : 'Delete this image forever?'}
-          text="This can’t be undone. Image files that no canvas uses are removed from disk."
-          confirmLabel="Delete forever"
-          onConfirm={() => purge(confirm)}
-          onClose={() => setConfirm(null)}
-        />,
+          <ConfirmDialog
+            title={'before' in confirm ? `Delete all ${confirm.count} items forever?` : 'Delete this forever?'}
+            text="This can’t be undone. Image files that no board uses are removed from disk."
+            confirmLabel="Delete forever"
+            onConfirm={() => purge('before' in confirm ? { before: confirm.before } : confirm)}
+            onClose={() => setConfirm(null)}
+          />,
           // Outside the drawer: its slide transform would trap a fixed-position dialog.
           document.querySelector('.app') ?? document.body,
         )}

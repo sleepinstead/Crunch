@@ -35,17 +35,6 @@ dist-ssr/
 logs/
 *.log
 
-# CineTrack local data
-data/*.sqlite
-data/*.sqlite-*
-data/*.sqlite3
-data/*.sqlite3-*
-data/*.db
-data/*.db-*
-data/*.sqlite.*
-data/.cinetrack.lock
-data/.database.sqlite.*.tmp
-API.txt
 Thumbs.db
 
 # Local tooling

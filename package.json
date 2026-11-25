@@ -5,13 +5,14 @@
   "type": "module",
   "description": "Local-first inspiration canvas",
   "engines": {
-    "node": ">=22.18"
+    "node": ">=22.18 <27"
   },
   "scripts": {
-    "dev": "node --watch-path=server server/index.ts",
+    "dev": "node --watch-path=server server/main.ts",
     "build": "vite build",
-    "start": "NODE_ENV=production node server/index.ts",
-    "typecheck": "tsc --noEmit"
+    "start": "NODE_ENV=production node --disable-warning=ExperimentalWarning server/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --disable-warning=ExperimentalWarning --test test/"
   },
   "dependencies": {
     "@fontsource-variable/plus-jakarta-sans": "^5.3.0",
@@ -29,5 +30,6 @@
     "@vitejs/plugin-react": "^6.3.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
-  }
+  },
+  "license": "MIT"
 }

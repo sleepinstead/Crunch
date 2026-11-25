@@ -52,7 +52,13 @@ function Row({ title, text, children, stack }: { title: string; text?: string; c
 }
 
 const formatBytes = (b: number) =>
-  b < 1024 ? `${b} B` : b < 1024 ** 2 ? `${(b / 1024).toFixed(0)} KB` : b < 1024 ** 3 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${(b / 1024 ** 3).toFixed(2)} GB`;
+  b < 1024
+    ? `${b} B`
+    : b < 1024 ** 2
+      ? `${(b / 1024).toFixed(0)} KB`
+      : b < 1024 ** 3
+        ? `${(b / 1024 ** 2).toFixed(1)} MB`
+        : `${(b / 1024 ** 3).toFixed(2)} GB`;
 
 /**
  * Stays mounted through the exit so it can slide out. Uses CSS transitions
@@ -64,6 +70,7 @@ export function SettingsPanel(props: {
   onChange: (patch: Partial<Settings>) => void;
   onClose: () => void;
   onShowTour: () => void;
+  onImported: (message: string, failed?: boolean) => void;
 }) {
   // Built once in idle time and kept, parked off-screen: opening is then only a
   // class change, so the slide never loses its first frames to a heavy mount.
@@ -104,6 +111,7 @@ function Panel({
   onClose,
   onExited,
   onShowTour,
+  onImported,
 }: {
   open: boolean;
   shown: boolean;
@@ -112,13 +120,52 @@ function Panel({
   onClose: () => void;
   onExited: () => void;
   onShowTour: () => void;
+  onImported: (message: string, failed?: boolean) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [statsFailed, setStatsFailed] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  const runImport = async (file: File) => {
+    setImporting(true);
+    try {
+      const r = await api.importLibrary(file);
+      const skipped = r.skippedImages ? ` ${r.skippedImages} image${r.skippedImages === 1 ? '' : 's'} couldn’t be read.` : '';
+      onImported(`Imported ${r.projects} board${r.projects === 1 ? '' : 's'} and ${r.images} image${r.images === 1 ? '' : 's'}.${skipped}`);
+      api
+        .stats()
+        .then(setStats)
+        .catch(() => {});
+    } catch (err) {
+      onImported(`Import failed: ${(err as Error).message}`, true);
+    } finally {
+      setImporting(false);
+    }
+  };
   const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => {
-    if (open) api.stats().then(setStats).catch(() => {});
+    if (open)
+      api
+        .stats()
+        .then((v) => {
+          setStats(v);
+          setStatsFailed(false);
+        })
+        .catch(() => setStatsFailed(true));
+  }, [open]);
+
+  // Focus moves into the drawer when it opens and back to whatever opened it when it closes.
+  useEffect(() => {
+    if (!open) return;
+    const back = document.activeElement as HTMLElement | null;
+    const t = window.setTimeout(() => ref.current?.querySelector<HTMLElement>('.icon-btn')?.focus({ preventScroll: true }), 60);
+    return () => {
+      window.clearTimeout(t);
+      if (back && document.contains(back) && ref.current?.contains(document.activeElement)) back.focus({ preventScroll: true });
+    };
   }, [open]);
 
   useEffect(() => {
@@ -150,7 +197,7 @@ function Panel({
     >
       <header className="settings-head">
         <div>
-          <div className="settings-title">Settings</div>
+          <h2 className="settings-title">Settings</h2>
           <div className="settings-sub">Saved automatically on this machine.</div>
         </div>
         <button className="icon-btn" onClick={onClose} aria-label="Close settings">
@@ -212,7 +259,11 @@ function Panel({
             </Row>
             <Row title="Snap to equal spacing">
               <span className={s.snapping ? '' : 'set-disabled'}>
-                <Toggle label="Snap to equal spacing" on={s.snapping && s.snapSpacing} onChange={(v) => s.snapping && onChange({ snapSpacing: v })} />
+                <Toggle
+                  label="Snap to equal spacing"
+                  on={s.snapping && s.snapSpacing}
+                  onChange={(v) => s.snapping && onChange({ snapSpacing: v })}
+                />
               </span>
             </Row>
             <Row title="Show size while selected">
@@ -297,7 +348,7 @@ function Panel({
               <Toggle label="Show app name" on={s.showName} onChange={(v) => onChange({ showName: v })} />
             </Row>
             <Row title="Fade dock while dragging">
-              <Toggle label="Fade dock while arranging" on={s.fadeDock} onChange={(v) => onChange({ fadeDock: v })} />
+              <Toggle label="Fade dock while dragging" on={s.fadeDock} onChange={(v) => onChange({ fadeDock: v })} />
             </Row>
           </div>
         </section>
@@ -350,7 +401,7 @@ function Panel({
         <section>
           <h3>Library</h3>
           <div className="set-card">
-            <Row title="Empty Recently deleted" text="Permanently removes old deleted images.">
+            <Row title="Empty Recently deleted" text="Permanently removes old deleted layers.">
               <Seg
                 value={s.trashDays}
                 onChange={(v) => onChange({ trashDays: v })}
@@ -361,8 +412,38 @@ function Panel({
                 ]}
               />
             </Row>
-            <Row title="Library" text={stats ? `${stats.images} images · ${formatBytes(stats.bytes)} · ${stats.projects} projects` : '…'}>
+            <Row
+              title="Library"
+              text={
+                stats
+                  ? `${stats.images} images · ${formatBytes(stats.bytes)} · ${stats.projects} boards`
+                  : statsFailed
+                    ? 'Couldn’t load'
+                    : '…'
+              }
+            >
               <span />
+            </Row>
+            <Row title="Export everything" text="All boards, layers, images and Recently deleted, in one .crunch file.">
+              <a className="btn secondary small" href={api.exportUrl} download>
+                Export
+              </a>
+            </Row>
+            <Row title="Import a backup" text="Adds the boards from a .crunch file next to yours. Nothing is replaced.">
+              <button className="btn secondary small" disabled={importing} onClick={() => fileInput.current?.click()}>
+                {importing ? 'Importing…' : 'Import'}
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".crunch,application/x-tar"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (file) runImport(file);
+                }}
+              />
             </Row>
           </div>
         </section>

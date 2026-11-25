@@ -157,6 +157,16 @@ function NumberField({
           scrub.current = null;
           onScrubEnd?.();
         }}
+        onPointerCancel={() => {
+          if (!scrub.current) return;
+          scrub.current = null;
+          onScrubEnd?.();
+        }}
+        onLostPointerCapture={() => {
+          if (!scrub.current) return;
+          scrub.current = null;
+          onScrubEnd?.();
+        }}
         style={{ cursor: onScrub && value !== null ? 'ew-resize' : undefined }}
       >
         {label}
@@ -172,7 +182,8 @@ function NumberField({
         onBlur={() => {
           setFocused(false);
           const v = parseFloat(text);
-          if (Number.isFinite(v) && v !== value) onCommit(clamp(v));
+          // Re-confirming the displayed (rounded) value is not an edit.
+          if (Number.isFinite(v) && text.trim() !== shown) onCommit(clamp(v));
           else setText(shown);
         }}
         onChange={(e) => setText(e.target.value)}
@@ -217,16 +228,23 @@ function IconButton({
 
 /* ---------- layers ---------- */
 
-type Row =
-  | { kind: 'group'; id: string; name: string; members: Item[] }
-  | { kind: 'item'; item: Item; depth: number };
+type Row = { kind: 'group'; id: string; name: string; members: Item[] } | { kind: 'item'; item: Item; depth: number };
 
 function LayersTab(p: Props) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<string | null>(null);
   const [drag, setDrag] = useState<string[] | null>(null);
-  const [drop, setDrop] = useState<{ id: string; place: 'above' | 'below' } | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; ids: string[]; key: string; isGroup: boolean } | null>(null);
+  const [drop, setDrop] = useState<{
+    id: string;
+    place: 'above' | 'below';
+  } | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    ids: string[];
+    key: string;
+    isGroup: boolean;
+  } | null>(null);
 
   // Expand a group when one of its members is selected on its own.
   useEffect(() => {
@@ -244,7 +262,12 @@ function LayersTab(p: Props) {
         if (seen.has(it.groupId)) continue;
         seen.add(it.groupId);
         const members = top.filter((m) => m.groupId === it.groupId);
-        out.push({ kind: 'group', id: it.groupId, name: p.groups[it.groupId] ?? 'Group', members });
+        out.push({
+          kind: 'group',
+          id: it.groupId,
+          name: p.groups[it.groupId] ?? 'Group',
+          members,
+        });
         if (open.has(it.groupId)) for (const m of members) out.push({ kind: 'item', item: m, depth: 1 });
       } else out.push({ kind: 'item', item: it, depth: 0 });
     }
@@ -264,21 +287,76 @@ function LayersTab(p: Props) {
     const locked = members.every((i) => i.locked);
     const hidden = members.every((i) => i.hidden);
     return [
-      { label: 'Rename', icon: <Pencil />, onSelect: () => setRenaming(menu.key) },
-      { label: 'Zoom to', icon: <Focus />, onSelect: () => p.onFocus(menu.ids) },
+      {
+        label: 'Rename',
+        icon: <Pencil />,
+        onSelect: () => setRenaming(menu.key),
+      },
+      {
+        label: 'Zoom to',
+        icon: <Focus />,
+        onSelect: () => p.onFocus(menu.ids),
+      },
       'sep',
       ...(sel.some((i) => i.groupId)
-        ? ([{ label: 'Ungroup', icon: <Ungroup />, shortcut: '⇧⌘G', onSelect: p.onUngroup }] as MenuEntry[])
+        ? ([
+            {
+              label: 'Ungroup',
+              icon: <Ungroup />,
+              shortcut: '⇧⌘G',
+              onSelect: p.onUngroup,
+            },
+          ] as MenuEntry[])
         : []),
-      ...(units > 1 ? ([{ label: 'Group', icon: <Group />, shortcut: '⌘G', onSelect: p.onGroup }] as MenuEntry[]) : []),
-      { label: locked ? 'Unlock' : 'Lock', icon: locked ? <LockOpen /> : <Lock />, shortcut: '⇧⌘L', onSelect: () => p.onToggleFlag(menu.ids, 'locked') },
-      { label: hidden ? 'Show' : 'Hide', icon: hidden ? <Eye /> : <EyeOff />, shortcut: '⇧⌘H', onSelect: () => p.onToggleFlag(menu.ids, 'hidden') },
+      ...(units > 1
+        ? ([
+            {
+              label: 'Group',
+              icon: <Group />,
+              shortcut: '⌘G',
+              onSelect: p.onGroup,
+            },
+          ] as MenuEntry[])
+        : []),
+      {
+        label: locked ? 'Unlock' : 'Lock',
+        icon: locked ? <LockOpen /> : <Lock />,
+        shortcut: '⇧⌘L',
+        onSelect: () => p.onToggleFlag(menu.ids, 'locked'),
+      },
+      {
+        label: hidden ? 'Show' : 'Hide',
+        icon: hidden ? <Eye /> : <EyeOff />,
+        shortcut: '⇧⌘H',
+        onSelect: () => p.onToggleFlag(menu.ids, 'hidden'),
+      },
       'sep',
-      { label: 'Bring to front', icon: <BringToFront />, shortcut: ']', onSelect: () => p.onArrange('front') },
-      { label: 'Send to back', icon: <SendToBack />, shortcut: '[', onSelect: () => p.onArrange('back') },
-      { label: 'Duplicate', icon: <CopyPlus />, shortcut: '⌘D', onSelect: p.onDuplicate },
+      {
+        label: 'Bring to front',
+        icon: <BringToFront />,
+        shortcut: ']',
+        onSelect: () => p.onArrange('front'),
+      },
+      {
+        label: 'Send to back',
+        icon: <SendToBack />,
+        shortcut: '[',
+        onSelect: () => p.onArrange('back'),
+      },
+      {
+        label: 'Duplicate',
+        icon: <CopyPlus />,
+        shortcut: '⌘D',
+        onSelect: p.onDuplicate,
+      },
       'sep',
-      { label: 'Delete', icon: <Trash2 />, shortcut: '⌫', danger: true, onSelect: p.onDelete },
+      {
+        label: 'Delete',
+        icon: <Trash2 />,
+        shortcut: '⌫',
+        danger: true,
+        onSelect: p.onDelete,
+      },
     ];
   };
 
@@ -323,7 +401,10 @@ function LayersTab(p: Props) {
               if (!drag || ids.some((id) => drag.includes(id))) return;
               e.preventDefault();
               const rect = e.currentTarget.getBoundingClientRect();
-              setDrop({ id: anchorId(r), place: e.clientY < rect.top + rect.height / 2 ? 'above' : 'below' });
+              setDrop({
+                id: anchorId(r),
+                place: e.clientY < rect.top + rect.height / 2 ? 'above' : 'below',
+              });
             }}
             onDrop={(e) => {
               e.preventDefault();
@@ -336,12 +417,41 @@ function LayersTab(p: Props) {
             }}
             onClick={(e) => p.onSelect(ids, e.shiftKey || e.metaKey || e.ctrlKey ? 'toggle' : 'replace')}
             onDoubleClick={() => setRenaming(key)}
+            // Keyboard: arrows move between rows, Enter/Space select, F2 renames, Shift+F10 opens the menu.
+            tabIndex={renaming === key ? -1 : 0}
+            aria-label={name}
+            onKeyDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              const rowsEls = [...(e.currentTarget.parentElement?.querySelectorAll<HTMLElement>('.layer') ?? [])];
+              const at = rowsEls.indexOf(e.currentTarget);
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                rowsEls[Math.max(0, Math.min(rowsEls.length - 1, at + (e.key === 'ArrowDown' ? 1 : -1)))]?.focus();
+              } else if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                p.onSelect(ids, e.shiftKey || e.metaKey || e.ctrlKey ? 'toggle' : 'replace');
+              } else if (e.key === 'F2') {
+                e.preventDefault();
+                setRenaming(key);
+              } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
+                e.preventDefault();
+                if (!ids.every((id) => p.selection.has(id))) p.onSelect(ids, 'replace');
+                const rect = e.currentTarget.getBoundingClientRect();
+                setMenu({ x: rect.left + 24, y: rect.bottom, ids, key, isGroup: r.kind === 'group' });
+              }
+            }}
             onContextMenu={(e) => {
               e.preventDefault();
               e.stopPropagation();
               // Right-clicking an unselected row selects it first (like Figma).
               if (!ids.every((id) => p.selection.has(id))) p.onSelect(ids, 'replace');
-              setMenu({ x: e.clientX, y: e.clientY, ids, key, isGroup: r.kind === 'group' });
+              setMenu({
+                x: e.clientX,
+                y: e.clientY,
+                ids,
+                key,
+                isGroup: r.kind === 'group',
+              });
             }}
           >
             {r.kind === 'group' ? (
@@ -464,18 +574,32 @@ function DesignTab(p: Props) {
 
   const ids = sel.map((i) => i.id);
   const one = sel.length === 1 ? sel[0] : null;
-  const b = boundsOf(sel)!;
+  const live = boundsOf(sel)!;
+  // While scrubbing, previews are built from the items as they were when the scrub began,
+  // so offsets must be measured from those bounds too (not the already-previewed ones).
+  const scrubBase = useRef<typeof live | null>(null);
+  const b = scrubBase.current ?? live;
   const texts = sel.filter((i) => i.kind === 'text');
   const allText = texts.length === sel.length;
   const units = new Set(sel.map((i) => i.groupId || i.id)).size;
   const grouped = sel.some((i) => i.groupId);
 
   // Move / scale the whole selection relative to its bounds.
-  const moveTo = (axis: 'x' | 'y', v: number) => (it: Item) => ({ ...it, [axis]: it[axis] + (v - b[axis]) });
+  const moveTo = (axis: 'x' | 'y', v: number) => (it: Item) => ({
+    ...it,
+    [axis]: it[axis] + (v - b[axis]),
+  });
   const scaleTo = (axis: 'w' | 'h', v: number) => (it: Item) => {
     const k = v / b[axis];
     const fs = it.kind === 'text' ? (it.fontSize ?? 24) * k : it.fontSize;
-    return { ...it, x: b.x + (it.x - b.x) * k, y: b.y + (it.y - b.y) * k, w: it.w * k, h: it.h * k, fontSize: fs };
+    return {
+      ...it,
+      x: b.x + (it.x - b.x) * k,
+      y: b.y + (it.y - b.y) * k,
+      w: it.w * k,
+      h: it.h * k,
+      fontSize: fs,
+    };
   };
   const resizeOne = (axis: 'w' | 'h', v: number) => (it: Item) => {
     // Always keep proportions.
@@ -485,15 +609,32 @@ function DesignTab(p: Props) {
     return { ...it, w: Math.max(1, w), h: Math.max(1, h), fontSize: fs };
   };
 
-  const TIPS: Record<string, string> = { X: 'X position', Y: 'Y position', W: 'Width', H: 'Height', Size: 'Font size' };
-  const field = (label: ReactNode, value: number | null, fn: (v: number) => (it: Item) => Item, extra: Partial<Parameters<typeof NumberField>[0]> = {}) => (
+  const TIPS: Record<string, string> = {
+    X: 'X position',
+    Y: 'Y position',
+    W: 'Width',
+    H: 'Height',
+    Size: 'Font size',
+  };
+  const field = (
+    label: ReactNode,
+    value: number | null,
+    fn: (v: number) => (it: Item) => Item,
+    extra: Partial<Parameters<typeof NumberField>[0]> = {},
+  ) => (
     <NumberField
       tip={typeof label === 'string' ? TIPS[label] : undefined}
       label={label}
       value={value}
       onCommit={(v) => p.onPatch(ids, fn(v))}
-      onScrub={(v) => p.onPreview(ids, fn(v))}
-      onScrubEnd={p.onPreviewEnd}
+      onScrub={(v) => {
+        if (!scrubBase.current) scrubBase.current = live;
+        p.onPreview(ids, fn(v));
+      }}
+      onScrubEnd={() => {
+        scrubBase.current = null;
+        p.onPreviewEnd();
+      }}
       {...extra}
     />
   );
@@ -545,7 +686,10 @@ function DesignTab(p: Props) {
           {field(
             <RotateCw aria-label="Rotation" />,
             same(sel.map((i) => Math.round((i.rotation ?? 0) * 10) / 10)),
-            (v) => (it) => ({ ...it, rotation: ((v + 540) % 360) - 180 }),
+            (v) => (it) => ({
+              ...it,
+              rotation: ((((v + 180) % 360) + 360) % 360) - 180,
+            }),
             { suffix: '°', tip: 'Rotation' },
           )}
           {field(
@@ -561,12 +705,22 @@ function DesignTab(p: Props) {
         <section>
           <div className="side-label">Text</div>
           <div className="grid2">
-            {field('Size', same(texts.map((t) => Math.round((t.fontSize ?? 24) * 10) / 10)), (v) => (it) => ({ ...it, fontSize: Math.max(1, v) }), { min: 1 })}
+            {field(
+              'Size',
+              same(texts.map((t) => Math.round((t.fontSize ?? 24) * 10) / 10)),
+              (v) => (it) => ({ ...it, fontSize: Math.max(1, v) }),
+              { min: 1 },
+            )}
             <label className="num select">
               <span className="num-label">Weight</span>
               <select
                 value={same(texts.map((t) => t.fontWeight ?? 500)) ?? ''}
-                onChange={(e) => p.onPatch(ids, (it) => ({ ...it, fontWeight: Number(e.target.value) }))}
+                onChange={(e) =>
+                  p.onPatch(ids, (it) => ({
+                    ...it,
+                    fontWeight: Number(e.target.value),
+                  }))
+                }
               >
                 {same(texts.map((t) => t.fontWeight ?? 500)) === null && <option value="">Mixed</option>}
                 {WEIGHTS.map((w) => (
@@ -694,10 +848,20 @@ export function Sidebar(p: Props) {
         onContextMenu={(e) => e.preventDefault()}
       >
         <div className="side-tabs" role="tablist">
-          <button role="tab" aria-selected={p.tab === 'layers'} className={`side-tab${p.tab === 'layers' ? ' on' : ''}`} onClick={() => p.onTab('layers')}>
+          <button
+            role="tab"
+            aria-selected={p.tab === 'layers'}
+            className={`side-tab${p.tab === 'layers' ? ' on' : ''}`}
+            onClick={() => p.onTab('layers')}
+          >
             <Layers /> Layers
           </button>
-          <button role="tab" aria-selected={p.tab === 'design'} className={`side-tab${p.tab === 'design' ? ' on' : ''}`} onClick={() => p.onTab('design')}>
+          <button
+            role="tab"
+            aria-selected={p.tab === 'design'}
+            className={`side-tab${p.tab === 'design' ? ' on' : ''}`}
+            onClick={() => p.onTab('design')}
+          >
             <SlidersHorizontal /> Design
           </button>
         </div>

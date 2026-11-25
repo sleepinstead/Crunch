@@ -112,7 +112,7 @@ export default function Landing({ onOpenApp, animateIn = false }: { onOpenApp: (
             </button>
           </div>
 
-          <div className="lp-demo lp-rise" style={{ animationDelay: '880ms' }}>
+          <div className="lp-demo lp-rise" style={{ animationDelay: '880ms' }} aria-hidden>
             <HeroDemo />
           </div>
         </section>

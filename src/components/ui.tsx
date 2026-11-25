@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 /* ---------- dismiss helpers ---------- */
 
@@ -155,15 +155,83 @@ export function Popover({
 
 /* ---------- modal dialog ---------- */
 
-export function Dialog({ onClose, children, width = 380 }: { onClose: () => void; children: ReactNode; width?: number }) {
+const FOCUSABLE = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Modal focus: moves focus in (to an autofocus element, else the first control),
+ * keeps Tab inside, and returns focus to whatever opened it when it closes.
+ */
+export function useFocusTrap(ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const back = document.activeElement as HTMLElement | null;
+    const t = window.setTimeout(() => {
+      if (el.contains(document.activeElement)) return;
+      (el.querySelector<HTMLElement>('[autofocus], [data-autofocus]') ?? el.querySelector<HTMLElement>(FOCUSABLE) ?? el).focus();
+    });
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const list = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((n) => n.offsetParent !== null);
+      if (!list.length) {
+        e.preventDefault();
+        return;
+      }
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !el.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !el.contains(document.activeElement))) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      window.clearTimeout(t);
+      document.removeEventListener('keydown', onKey, true);
+      if (back && document.contains(back)) back.focus({ preventScroll: true });
+    };
+  }, [ref]);
+}
+
+export function Dialog({
+  onClose,
+  children,
+  width = 380,
+  label,
+}: {
+  onClose: () => void;
+  children: ReactNode;
+  width?: number;
+  /** Accessible name when the dialog has no `.dialog-title`. */
+  label?: string;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  useFocusTrap(ref);
   useEffect(() => {
     const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [onClose]);
+  useEffect(() => {
+    const title = ref.current?.querySelector('.dialog-title');
+    if (title && !title.id) title.id = titleId;
+  });
   return (
     <div className="scrim" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog pop-in" style={{ width }} role="dialog" aria-modal="true">
+      <div
+        ref={ref}
+        className="dialog pop-in"
+        style={{ width }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={label ? undefined : titleId}
+        aria-label={label}
+        tabIndex={-1}
+      >
         {children}
       </div>
     </div>
@@ -222,12 +290,12 @@ export function ConfirmDialog({
       <div className="dialog-title">{title}</div>
       <div className="dialog-text">{text}</div>
       <div className="dialog-actions">
-        <button className="btn secondary" onClick={onClose}>
+        {/* Focus starts on Cancel: Enter right away must never destroy anything. */}
+        <button className="btn secondary" autoFocus onClick={onClose}>
           Cancel
         </button>
         <button
           className="btn danger"
-          autoFocus
           onClick={() => {
             onConfirm();
             onClose();
@@ -249,13 +317,27 @@ export interface ToastMsg {
 }
 
 export function Toasts({ toasts }: { toasts: ToastMsg[] }) {
+  // Errors are announced right away; other messages wait for a pause.
   return (
-    <div className="toasts" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className={`toast pop-in ${t.tone}`}>
-          {t.text}
-        </div>
-      ))}
+    <div className="toasts">
+      <div aria-live="polite">
+        {toasts
+          .filter((t) => t.tone !== 'error')
+          .map((t) => (
+            <div key={t.id} className="toast pop-in info">
+              {t.text}
+            </div>
+          ))}
+      </div>
+      <div role="alert">
+        {toasts
+          .filter((t) => t.tone === 'error')
+          .map((t) => (
+            <div key={t.id} className="toast pop-in error">
+              {t.text}
+            </div>
+          ))}
+      </div>
     </div>
   );
 }

@@ -54,11 +54,29 @@ export interface Item {
   sourceUrl: string | null;
 }
 
-async function req<T>(method: string, url: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+/** Sent on every write; the server refuses writes without it (cross-site protection). */
+const APP_HEADER = { 'X-Crunch': '1' };
+
+async function req<T>(
+  method: string,
+  url: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+  init: { keepalive?: boolean } = {},
+): Promise<T> {
   const isBlob = body instanceof Blob;
   const res = await fetch(url, {
     method,
-    headers: body === undefined ? headers : { 'Content-Type': isBlob ? body.type || 'application/octet-stream' : 'application/json', ...headers },
+    keepalive: init.keepalive,
+    headers: {
+      ...APP_HEADER,
+      ...(body === undefined
+        ? {}
+        : {
+            'Content-Type': isBlob ? body.type || 'application/octet-stream' : 'application/json',
+          }),
+      ...headers,
+    },
     body: body === undefined ? undefined : isBlob ? body : JSON.stringify(body),
   });
   if (!res.ok) {
@@ -77,8 +95,14 @@ export interface Stats {
   images: number;
   bytes: number;
   projects: number;
-  dataDir: string;
-  imagesDir: string;
+}
+
+export interface ImportResult {
+  projects: number;
+  items: number;
+  images: number;
+  trash: number;
+  skippedImages: number;
 }
 
 export interface Group {
@@ -88,6 +112,9 @@ export interface Group {
 
 export interface TrashItem {
   id: string;
+  kind: 'image' | 'text';
+  text: string | null;
+  name: string | null;
   projectId: string;
   projectName: string;
   projectExists: boolean;
@@ -102,7 +129,8 @@ export const api = {
   listTrash: () => req<TrashItem[]>('GET', '/api/trash'),
   restoreTrash: (ids: string[], fallbackProjectId: string) =>
     req<{ restored: { id: string; projectId: string }[] }>('POST', '/api/trash/restore', { ids, fallbackProjectId }),
-  purgeTrash: (target: { ids: string[] } | { all: true }) => req<{ filesRemoved: number }>('DELETE', '/api/trash', target),
+  /** `before`: everything deleted at or before that time (what the user saw when confirming). */
+  purgeTrash: (target: { ids: string[] } | { before: number }) => req<{ filesRemoved: number }>('DELETE', '/api/trash', target),
 
   getSettings: () => req<Record<string, unknown>>('GET', '/api/settings'),
   updateSettings: (patch: Record<string, unknown>) => req<Record<string, unknown>>('PATCH', '/api/settings', patch),
@@ -110,19 +138,27 @@ export const api = {
 
   listProjects: () => req<Project[]>('GET', '/api/projects'),
   createProject: (name?: string) => req<Project>('POST', '/api/projects', { name }),
-  updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'pattern' | 'bgColor' | 'density' | 'view'>>) =>
-    req<Project>('PATCH', `/api/projects/${id}`, patch),
+  updateProject: (id: string, patch: Partial<Pick<Project, 'name' | 'pattern' | 'bgColor' | 'density' | 'view'>>, keepalive = false) =>
+    req<Project>('PATCH', `/api/projects/${id}`, patch, {}, { keepalive }),
   reorderProjects: (ids: string[]) => req('POST', '/api/projects/reorder', { ids }),
   deleteProject: (id: string) => req('DELETE', `/api/projects/${id}`),
 
   listItems: (projectId: string) => req<Item[]>('GET', `/api/projects/${projectId}/items`),
   listGroups: (projectId: string) => req<Group[]>('GET', `/api/projects/${projectId}/groups`),
   saveGroups: (groups: (Group & { projectId: string })[]) => req('PUT', '/api/groups', groups),
-  upsertItems: (items: Item[]) => req('PUT', '/api/items', items),
-  deleteItems: (ids: string[]) => req('DELETE', '/api/items', { ids }),
+  /** `keepalive` lets the write finish while the page is closing. */
+  upsertItems: (items: Item[], keepalive = false) => req('PUT', '/api/items', items, {}, { keepalive }),
+  deleteItems: (ids: string[], keepalive = false) => req('DELETE', '/api/items', { ids }, {}, { keepalive }),
 
   getAsset: (id: string) => req<Asset>('GET', `/api/assets/${id}`),
   uploadAsset: (blob: Blob, sourceUrl?: string) =>
     req<Asset>('POST', '/api/assets/upload', blob, sourceUrl ? { 'X-Source-Url': encodeURIComponent(sourceUrl) } : {}),
   assetFromUrl: (url: string) => req<Asset>('POST', '/api/assets/url', { url }),
+
+  /** The whole library as a `.crunch` file (the browser downloads it). */
+  exportUrl: '/api/export',
+  importLibrary: (file: File) =>
+    req<ImportResult>('POST', '/api/import', file, {
+      'Content-Type': 'application/x-tar',
+    }),
 };

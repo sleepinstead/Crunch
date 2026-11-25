@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { imageSize } from 'image-size';
-import { db, IMAGES_DIR } from './db.ts';
+import type { Store } from './db.ts';
 
 export interface AssetRow {
   id: string;
@@ -38,6 +38,18 @@ const TYPES: Record<string, { ext: string; mime: string }> = {
   jxl: { ext: 'jxl', mime: 'image/jxl' },
 };
 
+/** Stored file names: 32 hex characters of the content hash and a known extension. */
+export const FILE_NAME = /^[0-9a-f]{32}\.(jpg|png|gif|webp|svg|avif|bmp|ico|tiff|heic|jxl)$/;
+
+/** Absolute path of a stored image, or null if the name is not one Crunch writes. */
+export function imagePath(store: Pick<Store, 'imagesDir'>, file: string): string | null {
+  if (!FILE_NAME.test(file)) return null;
+  const p = path.join(store.imagesDir, file);
+  return p.startsWith(store.imagesDir + path.sep) ? p : null;
+}
+
+const MAX_SIDE = 100_000;
+
 function detect(buf: Buffer) {
   let info;
   try {
@@ -54,22 +66,30 @@ function detect(buf: Buffer) {
   let height = info.height ?? 0;
   // EXIF orientations 5–8 are rotated 90°; browsers render them swapped.
   if (info.orientation && info.orientation >= 5) [width, height] = [height, width];
-  if (!width || !height) {
+  if (!(width > 0 && height > 0)) {
     width = 800;
     height = 600;
   }
+  width = Math.min(Math.round(width), MAX_SIDE);
+  height = Math.min(Math.round(height), MAX_SIDE);
   return { ...t, width, height };
 }
 
 /** Write an image to permanent storage (deduplicated by content) and record it in SQLite. */
-export function storeAsset(buf: Buffer, sourceUrl: string | null): AssetRow {
+export function storeAsset(store: Store, buf: Buffer, sourceUrl: string | null): AssetRow {
   if (!buf.length) throw new HttpError(400, 'Empty image.');
+  const { db } = store;
   const hash = crypto.createHash('sha256').update(buf).digest('hex');
   const existing = db.prepare('SELECT * FROM assets WHERE hash = ?').get(hash) as AssetRow | undefined;
   if (existing) {
-    // Self-heal if the file went missing on disk.
-    const p = path.join(IMAGES_DIR, existing.file);
-    if (!fs.existsSync(p)) writeAtomic(p, buf);
+    // Self-heal if the file went missing or was cut short on disk.
+    const p = imagePath(store, existing.file);
+    if (p) {
+      const size = fs.existsSync(p) ? fs.statSync(p).size : -1;
+      if (size !== buf.length) writeAtomic(p, buf);
+    }
+    // A pending delete of this file (from a purge) must not remove it now that it is used again.
+    db.prepare('DELETE FROM pending_file_deletes WHERE file = ?').run(existing.file);
     if (!existing.source_url && sourceUrl) {
       db.prepare('UPDATE assets SET source_url = ? WHERE id = ?').run(sourceUrl, existing.id);
       existing.source_url = sourceUrl;
@@ -79,7 +99,8 @@ export function storeAsset(buf: Buffer, sourceUrl: string | null): AssetRow {
 
   const { ext, mime, width, height } = detect(buf);
   const file = `${hash.slice(0, 32)}.${ext}`;
-  writeAtomic(path.join(IMAGES_DIR, file), buf);
+  writeAtomic(path.join(store.imagesDir, file), buf);
+  db.prepare('DELETE FROM pending_file_deletes WHERE file = ?').run(file);
 
   const row: AssetRow = {
     id: crypto.randomUUID(),
@@ -102,15 +123,75 @@ export function storeAsset(buf: Buffer, sourceUrl: string | null): AssetRow {
 function writeAtomic(target: string, buf: Buffer) {
   // Recreate the folder if it was removed while the server was running.
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  const tmp = `${target}.${process.pid}.tmp`;
-  const fd = fs.openSync(tmp, 'w');
+  const tmp = `${target}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   try {
-    fs.writeSync(fd, buf);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeSync(fd, buf);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, target);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    if ((err as NodeJS.ErrnoException).code === 'ENOSPC') throw new HttpError(507, 'The disk is full, so the image wasn’t saved.');
+    throw err;
   }
-  fs.renameSync(tmp, target);
+}
+
+/** Remove files queued for deletion. Rows stay queued if a delete fails, and are retried later. */
+export function flushFileDeletes(store: Store) {
+  const rows = store.db.prepare('SELECT file FROM pending_file_deletes').all() as { file: string }[];
+  const done = store.db.prepare('DELETE FROM pending_file_deletes WHERE file = ?');
+  const inUse = store.db.prepare('SELECT 1 FROM assets WHERE file = ? LIMIT 1');
+  for (const { file } of rows) {
+    if (inUse.get(file)) {
+      done.run(file);
+      continue;
+    }
+    const p = imagePath(store, file);
+    try {
+      if (p) fs.rmSync(p, { force: true });
+      done.run(file);
+    } catch (err) {
+      console.warn(`  Couldn’t remove ${file}: ${(err as Error).message}. Will retry.`);
+    }
+  }
+}
+
+/**
+ * Start-up housekeeping: drop asset rows nothing has used for an hour (uploads
+ * whose placement never arrived), and image files no row knows about.
+ */
+export function collectGarbage(store: Store, olderThanMs = 3_600_000) {
+  const { db, tx } = store;
+  const cutoff = Date.now() - olderThanMs;
+  tx(() => {
+    const unused = db
+      .prepare(
+        `SELECT id, file FROM assets a WHERE created_at < ?
+           AND NOT EXISTS (SELECT 1 FROM items i WHERE i.asset_id = a.id)
+           AND NOT EXISTS (SELECT 1 FROM trash t WHERE t.asset_id = a.id)`,
+      )
+      .all(cutoff) as { id: string; file: string }[];
+    const del = db.prepare('DELETE FROM assets WHERE id = ?');
+    const queue = db.prepare('INSERT OR IGNORE INTO pending_file_deletes (file) VALUES (?)');
+    for (const a of unused) {
+      del.run(a.id);
+      queue.run(a.file);
+    }
+  });
+  if (fs.existsSync(store.imagesDir)) {
+    const known = new Set((db.prepare('SELECT file FROM assets').all() as { file: string }[]).map((r) => r.file));
+    for (const f of fs.readdirSync(store.imagesDir)) {
+      const p = path.join(store.imagesDir, f);
+      // Stale temp files from an interrupted write, and orphaned images older than the cutoff.
+      const stale = f.endsWith('.tmp') || (FILE_NAME.test(f) && !known.has(f));
+      if (stale && fs.statSync(p).mtimeMs < cutoff) fs.rmSync(p, { force: true });
+    }
+  }
+  flushFileDeletes(store);
 }
 
 export function assetJson(a: AssetRow) {

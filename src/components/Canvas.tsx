@@ -22,7 +22,19 @@ import {
 import { api, type Asset, type Item, type Project, type View } from '../api';
 import { CRUNCH_ASSET_ATTR, hostOf, readClipboard, readTransfer, resolveSource, type Source } from '../ingest';
 import { isDark } from '../color';
-import { aabb, align, boundsOf, distribute, guidesFor, snapEdge, snapMove, type AlignMode, type GapMark, type Guide, type Rect } from '../geometry';
+import {
+  aabb,
+  align,
+  boundsOf,
+  distribute,
+  guidesFor,
+  snapEdge,
+  snapMove,
+  type AlignMode,
+  type GapMark,
+  type Guide,
+  type Rect,
+} from '../geometry';
 import { Sidebar } from './Sidebar';
 import { GAP_PX, SIZE_SCALE, TEXT_SIZE_PX, reducedMotion, type Settings } from '../settings';
 import { Menu, UrlDialog, type MenuEntry } from './ui';
@@ -44,7 +56,14 @@ interface Entry {
 type Corner = 'nw' | 'ne' | 'sw' | 'se';
 
 type Mode =
-  | { type: 'pan'; sx: number; sy: number; vx: number; vy: number; started: boolean }
+  | {
+      type: 'pan';
+      sx: number;
+      sy: number;
+      vx: number;
+      vy: number;
+      started: boolean;
+    }
   | {
       type: 'move';
       sx: number;
@@ -69,7 +88,14 @@ type Mode =
       dirY: number;
       ratio: number;
     }
-  | { type: 'rotate'; id: string; cx: number; cy: number; start: number; before: Item }
+  | {
+      type: 'rotate';
+      id: string;
+      cx: number;
+      cy: number;
+      start: number;
+      before: Item;
+    }
   | {
       type: 'groupResize';
       ax: number;
@@ -150,7 +176,7 @@ function hitsRect(i: Item, r: Rect): boolean {
 }
 
 const normDeg = (d: number) => {
-  const n = (((d + 180) % 360) + 360) % 360 - 180;
+  const n = ((((d + 180) % 360) + 360) % 360) - 180;
   return Math.abs(n) < 1e-6 ? 0 : n;
 };
 
@@ -185,7 +211,12 @@ function layout(assets: Asset[], center: { x: number; y: number }, zoom: number,
     const width = r.reduce((a, i) => a + sizes[i].w, 0) + gap * (r.length - 1);
     let x = center.x - width / 2;
     for (const i of r) {
-      out[i] = { x, y: y + (rowHeights[ri] - sizes[i].h) / 2, w: sizes[i].w, h: sizes[i].h };
+      out[i] = {
+        x,
+        y: y + (rowHeights[ri] - sizes[i].h) / 2,
+        w: sizes[i].w,
+        h: sizes[i].h,
+      };
       x += sizes[i].w + gap;
     }
     y += rowHeights[ri] + gap;
@@ -399,23 +430,41 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const [view, setViewState] = useState<View>(project.view);
   const viewRef = useRef(view);
   // The pattern is screen-sized, so it follows pans only; zooming leaves it still.
-  const [bgOffset, setBgOffset] = useState({ x: project.view.x, y: project.view.y });
+  const [bgOffset, setBgOffset] = useState({
+    x: project.view.x,
+    y: project.view.y,
+  });
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<(Rect & { id: string })[]>([]);
   const [marquee, setMarquee] = useState<Rect | null>(null);
-  const [rotLabel, setRotLabel] = useState<{ x: number; y: number; deg: number } | null>(null);
+  const [rotLabel, setRotLabel] = useState<{
+    x: number;
+    y: number;
+    deg: number;
+  } | null>(null);
   const [interacting, setInteracting] = useState(false);
   const [spaceDown, setSpaceDown] = useState(false);
   const [panning, setPanning] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number; kind: 'canvas' | 'item'; world: { x: number; y: number } } | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    kind: 'canvas' | 'item';
+    world: { x: number; y: number };
+  } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [groups, setGroupsState] = useState<Record<string, string>>({});
   const groupsRef = useRef(groups);
-  const [snapLines, setSnapLines] = useState<{ guides: Guide[]; gaps: GapMark[] } | null>(null);
+  const [snapLines, setSnapLines] = useState<{
+    guides: Guide[];
+    gaps: GapMark[];
+  } | null>(null);
   const snapOthers = useRef<Rect[] | null>(null);
   const preview = useRef<Change | null>(null);
-  const [sidebar, setSidebarState] = useState<{ open: boolean; tab: 'layers' | 'design' }>(() => {
+  const [sidebar, setSidebarState] = useState<{
+    open: boolean;
+    tab: 'layers' | 'design';
+  }>(() => {
     try {
       // Only the tab is remembered: a reload always starts with the canvas clear.
       const saved = JSON.parse(localStorage.getItem('crunch.sidebar') ?? '{}');
@@ -446,12 +495,19 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   };
   const editBefore = useRef<Item | null>(null);
   const newTextId = useRef<string | null>(null);
-  const measureSave = useRef<number | undefined>(undefined);
-  const [urlDialogAt, setUrlDialogAt] = useState<{ x: number; y: number } | null>(null);
+  const measureSave = useRef(new Map<string, number>());
+  const [urlDialogAt, setUrlDialogAt] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   const mode = useRef<Mode | null>(null);
   const spaceRef = useRef(false);
-  const pointer = useRef<{ x: number; y: number; inside: boolean }>({ x: 0, y: 0, inside: false });
+  const pointer = useRef<{ x: number; y: number; inside: boolean }>({
+    x: 0,
+    y: 0,
+    inside: false,
+  });
   const hist = useMemo(() => historyFor(project.id), [project.id]);
   const lastNudge = useRef<{ key: string; t: number; entry: Entry } | null>(null);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -502,13 +558,18 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   );
 
   const size = () => {
-    const r = rootRef.current!.getBoundingClientRect();
+    const r = rootRef.current?.getBoundingClientRect() ?? {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      left: 0,
+      top: 0,
+    };
     return { w: r.width, h: r.height, left: r.left, top: r.top };
   };
 
   const toWorld = useCallback((cx: number, cy: number) => {
     const v = viewRef.current;
-    const r = rootRef.current!.getBoundingClientRect();
+    const r = rootRef.current?.getBoundingClientRect() ?? { left: 0, top: 0 };
     return { x: (cx - r.left - v.x) / v.zoom, y: (cy - r.top - v.y) / v.zoom };
   }, []);
 
@@ -528,8 +589,14 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       if (anim.current) cancelAnimationFrame(anim.current);
       const { w, h } = size();
       const from = viewRef.current;
-      const c0 = { x: (w / 2 - from.x) / from.zoom, y: (h / 2 - from.y) / from.zoom };
-      const c1 = { x: (w / 2 - target.x) / target.zoom, y: (h / 2 - target.y) / target.zoom };
+      const c0 = {
+        x: (w / 2 - from.x) / from.zoom,
+        y: (h / 2 - from.y) / from.zoom,
+      };
+      const c1 = {
+        x: (w / 2 - target.x) / target.zoom,
+        y: (h / 2 - target.y) / target.zoom,
+      };
       const start = performance.now();
       const dur = reducedMotion() ? 0 : 320;
       const step = (now: number) => {
@@ -551,7 +618,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const { w, h } = size();
       const pad = 64;
       const zoom = clampZoom(Math.min((w - pad * 2) / b.w, (h - pad * 2 - DOCK_SPACE) / b.h, maxZoom));
-      animateTo({ zoom, x: w / 2 - (b.x + b.w / 2) * zoom, y: (h - DOCK_SPACE) / 2 - (b.y + b.h / 2) * zoom });
+      animateTo({
+        zoom,
+        x: w / 2 - (b.x + b.w / 2) * zoom,
+        y: (h - DOCK_SPACE) / 2 - (b.y + b.h / 2) * zoom,
+      });
     },
     [animateTo],
   );
@@ -589,21 +660,21 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
 
   /* ---------- load ---------- */
 
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => {
     let alive = true;
-    api
-      .listItems(project.id)
-      .then((list) => {
+    setLoadError(null);
+    Promise.all([api.listItems(project.id), api.listGroups(project.id)])
+      .then(([list, gs]) => {
         if (!alive) return;
-        api
-          .listGroups(project.id)
-          .then((gs) => {
-            groupsRef.current = Object.fromEntries(gs.map((g) => [g.id, g.name]));
-            setGroupsState(groupsRef.current);
-          })
-          .catch(() => {});
+        groupsRef.current = Object.fromEntries(gs.map((g) => [g.id, g.name]));
+        setGroupsState(groupsRef.current);
         // Keep anything added while the canvas was still loading.
-        setItems({ ...Object.fromEntries(list.map((i) => [i.id, i])), ...itemsRef.current });
+        setItems({
+          ...Object.fromEntries(list.map((i) => [i.id, i])),
+          ...itemsRef.current,
+        });
         const v = viewRef.current;
         // Fresh project: put the world origin in the middle of the screen.
         if (v.x === 0 && v.y === 0 && v.zoom === 1) {
@@ -611,44 +682,145 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
           if (list.length) {
             const b = boundsOf(list)!;
             const zoom = clampZoom(Math.min((w - 128) / b.w, (h - 128 - DOCK_SPACE) / b.h, 1));
-            setView({ zoom, x: w / 2 - (b.x + b.w / 2) * zoom, y: (h - DOCK_SPACE) / 2 - (b.y + b.h / 2) * zoom });
+            setView({
+              zoom,
+              x: w / 2 - (b.x + b.w / 2) * zoom,
+              y: (h - DOCK_SPACE) / 2 - (b.y + b.h / 2) * zoom,
+            });
           } else setView({ zoom: 1, x: w / 2, y: (h - DOCK_SPACE) / 2 });
         }
         setLoaded(true);
       })
-      .catch((err) => toast(err.message, 'error'));
+      .catch((err) => alive && setLoadError((err as Error).message));
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
+  }, [project.id, loadAttempt]);
 
   /* ---------- changes, persistence, history ---------- */
 
-  // After a failed save, reload from the server so the screen never shows unsaved state.
+  /** Unsent changes, latest per layer. Sent in order through `queue`. */
+  const outbox = useRef<Change>({});
+  const alive = useRef(true);
+  useEffect(
+    () => () => {
+      alive.current = false;
+    },
+    [],
+  );
+
+  const splitChange = (change: Change) => ({
+    ups: Object.values(change).filter((i): i is Item => !!i),
+    dels: Object.keys(change).filter((id) => !change[id]),
+  });
+
+  // After a failed save, reload from the server (once every queued write has finished),
+  // so the screen never shows unsaved state. A text box still being typed survives.
   const resync = useCallback(() => {
-    api
-      .listItems(project.id)
-      .then((list) => setItems(Object.fromEntries(list.map((i) => [i.id, i]))))
+    queue.current = queue.current
+      .then(() => api.listItems(project.id))
+      .then((list) => {
+        if (!alive.current) return;
+        const next = Object.fromEntries(list.map((i) => [i.id, i]));
+        const editingNew = newTextId.current && itemsRef.current[newTextId.current];
+        if (editingNew) next[editingNew.id] = editingNew;
+        setItems(next);
+      })
       .catch(() => {});
   }, [project.id]);
 
   useEffect(() => {
-    if (reloadSignal) resync();
-  }, [reloadSignal, resync]);
+    if (!reloadSignal) return;
+    // Layers came back from Recently deleted: old undo steps may describe a state that no longer exists.
+    hist.undo.length = 0;
+    hist.redo.length = 0;
+    resync();
+  }, [reloadSignal, resync, hist]);
+
+  const sendOutbox = useCallback(async () => {
+    const change = outbox.current;
+    outbox.current = {};
+    const { ups, dels } = splitChange(change);
+    if (ups.length) await api.upsertItems(ups);
+    if (dels.length) await api.deleteItems(dels);
+  }, []);
+
+  // Other tabs on the same board reload after this one saves (and vice versa).
+  // The channel is opened by the effect itself, so React's mount/unmount/remount in
+  // development never leaves a closed channel behind.
+  const channel = useRef<BroadcastChannel | null>(null);
+  const tabId = useMemo(() => Math.random().toString(36).slice(2), []);
+  useEffect(() => {
+    if (!('BroadcastChannel' in window)) return;
+    const ch = new BroadcastChannel('crunch');
+    channel.current = ch;
+    ch.onmessage = (e) => {
+      const msg = e.data as { project?: string; from?: string };
+      if (msg.project === project.id && msg.from !== tabId && !mode.current && !Object.keys(outbox.current).length) resync();
+    };
+    return () => {
+      if (channel.current === ch) channel.current = null;
+      ch.close();
+    };
+  }, [project.id, resync, tabId]);
+  // Telling other tabs is best-effort: it must never turn a successful save into an error.
+  const announce = useCallback(() => {
+    try {
+      channel.current?.postMessage({ project: project.id, from: tabId });
+    } catch {
+      /* channel closed: nothing to tell */
+    }
+  }, [project.id, tabId]);
+
+  // Closing or hiding the tab: send everything still waiting, in a way that survives the page going away.
+  useEffect(() => {
+    const flush = () => {
+      for (const [id, t] of measureSave.current) {
+        window.clearTimeout(t);
+        const cur = itemsRef.current[id];
+        if (cur) outbox.current[id] = cur;
+      }
+      measureSave.current.clear();
+      const typing = newTextId.current ? itemsRef.current[newTextId.current] : null;
+      if (typing && typing.text?.trim()) outbox.current[typing.id] = typing;
+      const { ups, dels } = splitChange(outbox.current);
+      outbox.current = {};
+      if (ups.length) api.upsertItems(ups, true).catch(() => {});
+      if (dels.length) api.deleteItems(dels, true).catch(() => {});
+      if (saveTimer.current !== undefined) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = undefined;
+        api.updateProject(project.id, { view: viewRef.current }, true).catch(() => {});
+      }
+    };
+    const onHide = () => document.visibilityState === 'hidden' && flush();
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [project.id]);
 
   const persist = useCallback(
     (change: Change) => {
-      const ups = Object.values(change).filter((i): i is Item => !!i);
-      const dels = Object.keys(change).filter((id) => !change[id]);
-      const fail = (err: Error) => {
-        toast(`Couldn’t save: ${err.message}`, 'error');
+      const valid = Object.values(change).every((i) => !i || [i.x, i.y, i.w, i.h, i.z, i.rotation ?? 0].every(Number.isFinite));
+      if (!valid) {
+        toast('Couldn’t save: a layer had an invalid size or position.', 'error');
         resync();
-      };
-      if (ups.length) queue.current = queue.current.then(() => api.upsertItems(ups)).catch(fail);
-      if (dels.length) queue.current = queue.current.then(() => api.deleteItems(dels)).catch(fail);
+        return;
+      }
+      Object.assign(outbox.current, change);
+      queue.current = queue.current
+        .then(sendOutbox)
+        .then(announce)
+        .catch((err: Error) => {
+          toast(`Couldn’t save: ${err.message}`, 'error');
+          resync();
+        });
     },
-    [toast, resync],
+    [toast, resync, sendOutbox, announce],
   );
 
   const apply = useCallback(
@@ -689,21 +861,22 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   );
 
   const maxZ = () => Object.values(itemsRef.current).reduce((m, i) => Math.max(m, i.z), 0);
+  const selectable = (it: Item) => !it.locked && !it.hidden;
+  /** The selection commands act on: locked layers stay put whatever is selected. */
   const selectedItems = () =>
     [...selRef.current]
       .map((id) => itemsRef.current[id])
-      .filter(Boolean)
+      .filter((it) => it && !it.locked)
       .sort((a, b) => a.z - b.z);
 
-  /** Expand ids to whole groups (clicking a grouped item picks its group, like Figma). */
+  /** Expand ids to whole groups (clicking a grouped item picks its group, like Figma). Locked and hidden members stay out. */
   const withGroups = (ids: Iterable<string>) => {
     const all = itemsRef.current;
     const out = new Set(ids);
     const gids = new Set([...out].map((id) => all[id]?.groupId).filter(Boolean) as string[]);
-    if (gids.size) for (const it of Object.values(all)) if (it.groupId && gids.has(it.groupId)) out.add(it.id);
+    if (gids.size) for (const it of Object.values(all)) if (it.groupId && gids.has(it.groupId) && selectable(it)) out.add(it.id);
     return out;
   };
-  const selectable = (it: Item) => !it.locked && !it.hidden;
 
   const saveGroup = useCallback(
     (id: string, name: string) => {
@@ -851,7 +1024,13 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       commit(
         Object.fromEntries(sel.map((i) => [i.id, i])),
         Object.fromEntries(
-          sel.map((i) => [i.id, { ...i, rotation: by === 'reset' ? 0 : normDeg((i.rotation ?? 0) + by) }]),
+          sel.map((i) => [
+            i.id,
+            {
+              ...i,
+              rotation: by === 'reset' ? 0 : normDeg((i.rotation ?? 0) + by),
+            },
+          ]),
         ),
       );
     },
@@ -875,7 +1054,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         return;
       }
       commit(Object.fromEntries(sel.map((i) => [i.id, i])), after);
-      lastNudge.current = { key, t: now, entry: hist.undo[hist.undo.length - 1] };
+      lastNudge.current = {
+        key,
+        t: now,
+        entry: hist.undo[hist.undo.length - 1],
+      };
     },
     [commit, apply, hist],
   );
@@ -883,9 +1066,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const copySelection = useCallback(async () => {
     const sel = selectedItems().filter((i) => i.kind !== 'text');
     if (!sel.length) return;
-    const html = sel
-      .map((i) => `<img src="${location.origin}${i.src}" ${CRUNCH_ASSET_ATTR}="${i.assetId}">`)
-      .join('');
+    const html = sel.map((i) => `<img src="${location.origin}${i.src}" ${CRUNCH_ASSET_ATTR}="${i.assetId}">`).join('');
     const htmlBlob = new Blob([html], { type: 'text/html' });
     const png = (async () => {
       const blob = await (await fetch(sel[sel.length - 1].src)).blob();
@@ -915,16 +1096,24 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       if (!sources.length) return;
       const v = viewRef.current;
       const { w, h } = size();
-      const center = at ?? { x: (w / 2 - v.x) / v.zoom, y: ((h - DOCK_SPACE) / 2 - v.y) / v.zoom };
+      const center = at ?? {
+        x: (w / 2 - v.x) / v.zoom,
+        y: ((h - DOCK_SPACE) / 2 - v.y) / v.zoom,
+      };
 
       // Placeholders while files upload / download.
       const gapPx = GAP_PX[settingsRef.current.imageGap];
       const scale = SIZE_SCALE[settingsRef.current.imageSize];
-      const place = (rects: Rect[]) =>
-        exact ? rects : avoidOverlap(rects, Object.values(itemsRef.current).map(aabb), v.zoom, gapPx);
+      const place = (rects: Rect[]) => (exact ? rects : avoidOverlap(rects, Object.values(itemsRef.current).map(aabb), v.zoom, gapPx));
       const ph = place(
         layout(
-          sources.map(() => ({ id: '', src: '', width: 4, height: 3, sourceUrl: null })),
+          sources.map(() => ({
+            id: '',
+            src: '',
+            width: 4,
+            height: 3,
+            sourceUrl: null,
+          })),
           center,
           v.zoom,
           gapPx,
@@ -1097,11 +1286,16 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const next = { ...it, w, h };
       setItems({ ...itemsRef.current, [id]: next });
       if (newTextId.current === id) return;
-      window.clearTimeout(measureSave.current);
-      measureSave.current = window.setTimeout(() => {
-        const cur = itemsRef.current[id];
-        if (cur && newTextId.current !== id) persist({ [id]: cur });
-      }, 300);
+      // One timer per text box, so measuring several at once saves all of them.
+      window.clearTimeout(measureSave.current.get(id));
+      measureSave.current.set(
+        id,
+        window.setTimeout(() => {
+          measureSave.current.delete(id);
+          const cur = itemsRef.current[id];
+          if (cur && newTextId.current !== id) persist({ [id]: cur });
+        }, 300),
+      );
     },
     [persist],
   );
@@ -1151,12 +1345,14 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (isEditable(e.target) || modalOpen() || inPanel(e.target)) return;
-      const mod = e.metaKey || e.ctrlKey;
+      const mod = IS_MAC ? e.metaKey : e.ctrlKey;
       const k = e.key.toLowerCase();
       if (k === 'escape' && cancelGesture()) {
         e.preventDefault();
         return;
       }
+      // Mid-drag, resize or rotate, only Escape (above) and Space (pan) apply.
+      if (mode.current && e.code !== 'Space') return;
       if (e.code === 'Space') {
         // Let a focused button or tab handle Space itself.
         if (onControl(e.target)) return;
@@ -1204,7 +1400,13 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         travel('redo');
       } else if (mod && k === 'a') {
         e.preventDefault();
-        setSelection(new Set(Object.values(itemsRef.current).filter(selectable).map((i) => i.id)));
+        setSelection(
+          new Set(
+            Object.values(itemsRef.current)
+              .filter(selectable)
+              .map((i) => i.id),
+          ),
+        );
       } else if (mod && k === 'd') {
         e.preventDefault();
         duplicateSelection();
@@ -1318,8 +1520,12 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
 
   /* ---------- pointer interactions ---------- */
 
+  const activePointer = useRef<number | null>(null);
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0 && e.button !== 1) return;
+    // One pointer drives a gesture; a second finger or pen is ignored until it ends.
+    if (!e.isPrimary || mode.current) return;
+    activePointer.current = e.pointerId;
     if (anim.current) cancelAnimationFrame(anim.current);
     const target = e.target as HTMLElement;
     // Clicking inside the text being edited places the caret.
@@ -1340,7 +1546,14 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
 
     if (e.button === 1 || spaceRef.current) {
       e.preventDefault();
-      mode.current = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: v.x, vy: v.y, started: true };
+      mode.current = {
+        type: 'pan',
+        sx: e.clientX,
+        sy: e.clientY,
+        vx: v.x,
+        vy: v.y,
+        started: true,
+      };
       setPanning(true);
       setInteracting(true);
       return;
@@ -1397,7 +1610,14 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const p = toWorld(e.clientX, e.clientY);
       const cx = it.x + it.w / 2;
       const cy = it.y + it.h / 2;
-      mode.current = { type: 'rotate', id: it.id, cx, cy, start: Math.atan2(p.y - cy, p.x - cx), before: it };
+      mode.current = {
+        type: 'rotate',
+        id: it.id,
+        cx,
+        cy,
+        start: Math.atan2(p.y - cy, p.x - cx),
+        before: it,
+      };
       setInteracting(true);
       return;
     }
@@ -1449,6 +1669,12 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
     pointer.current = { x: e.clientX, y: e.clientY, inside: true };
     const m = mode.current;
     if (!m) return;
+    if (activePointer.current !== null && e.pointerId !== activePointer.current) return;
+    // The button was released somewhere we never heard about (another window, a system gesture).
+    if (e.pointerType === 'mouse' && e.buttons === 0) {
+      endPointer();
+      return;
+    }
     const v = viewRef.current;
 
     if (m.type === 'pan') {
@@ -1492,14 +1718,25 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         const others = (snapOthers.current ??= Object.values(itemsRef.current)
           .filter((i) => !i.hidden && !m.ids.includes(i.id) && !m.origIds.includes(i.id))
           .map(aabb));
-        const box = boundsOf(m.ids.map((id) => ({ ...m.base[id], x: m.base[id].x + dx, y: m.base[id].y + dy })))!;
+        const box = boundsOf(
+          m.ids.map((id) => ({
+            ...m.base[id],
+            x: m.base[id].x + dx,
+            y: m.base[id].y + dy,
+          })),
+        )!;
         const snap = snapMove(box, others, 6 / v.zoom, settingsRef.current.snapSpacing);
         dx += snap.dx;
         dy += snap.dy;
         setSnapLines(snap.guides.length || snap.gaps.length ? { guides: snap.guides, gaps: snap.gaps } : null);
       } else setSnapLines(null);
       const next = { ...itemsRef.current };
-      for (const id of m.ids) next[id] = { ...m.base[id], x: m.base[id].x + dx, y: m.base[id].y + dy };
+      for (const id of m.ids)
+        next[id] = {
+          ...m.base[id],
+          x: m.base[id].x + dx,
+          y: m.base[id].y + dy,
+        };
       setItems(next);
     } else if (m.type === 'resize') {
       const p = toWorld(e.clientX, e.clientY);
@@ -1515,8 +1752,10 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const r = m.ratio;
       const min = 16 / v.zoom;
       let w: number;
-      if (!m.dirY) w = Math.max(min, sx); // left/right edge
-      else if (!m.dirX) w = Math.max(min, sy) * r; // top/bottom edge
+      if (!m.dirY)
+        w = Math.max(min, sx); // left/right edge
+      else if (!m.dirX)
+        w = Math.max(min, sy) * r; // top/bottom edge
       else w = Math.max(min, (sx + sy / r) / (1 + 1 / (r * r))); // corner
       let h = w / r;
       if (settingsRef.current.snapping && !m.before.rotation && !(e.metaKey || e.ctrlKey)) {
@@ -1545,7 +1784,10 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       const cx = m.ax + hx * cos - hy * sin;
       const cy = m.ay + hx * sin + hy * cos;
       const fontSize = m.before.kind === 'text' ? (m.before.fontSize ?? 24) * (w / m.before.w) : m.before.fontSize;
-      setItems({ ...itemsRef.current, [m.id]: { ...m.before, w, h, x: cx - w / 2, y: cy - h / 2, fontSize } });
+      setItems({
+        ...itemsRef.current,
+        [m.id]: { ...m.before, w, h, x: cx - w / 2, y: cy - h / 2, fontSize },
+      });
     } else if (m.type === 'groupResize') {
       const p = toWorld(e.clientX, e.clientY);
       const sx = (p.x - m.ax) * m.dirX;
@@ -1564,7 +1806,14 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         const nw = it.w * k;
         const nh = it.h * k;
         const fontSize = it.kind === 'text' ? (it.fontSize ?? 24) * k : it.fontSize;
-        next[it.id] = { ...it, w: nw, h: nh, x: cx - nw / 2, y: cy - nh / 2, fontSize };
+        next[it.id] = {
+          ...it,
+          w: nw,
+          h: nh,
+          x: cx - nw / 2,
+          y: cy - nh / 2,
+          fontSize,
+        };
       }
       setItems(next);
     } else if (m.type === 'rotate') {
@@ -1581,7 +1830,12 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       setItems({ ...itemsRef.current, [m.id]: { ...m.before, rotation: deg } });
     } else if (m.type === 'marquee') {
       const p = toWorld(e.clientX, e.clientY);
-      const rect = { x: Math.min(m.wx, p.x), y: Math.min(m.wy, p.y), w: Math.abs(p.x - m.wx), h: Math.abs(p.y - m.wy) };
+      const rect = {
+        x: Math.min(m.wx, p.x),
+        y: Math.min(m.wy, p.y),
+        w: Math.abs(p.x - m.wx),
+        h: Math.abs(p.y - m.wy),
+      };
       if (rect.w * v.zoom < 3 && rect.h * v.zoom < 3) return;
       if (!marquee) setInteracting(true);
       setMarquee(rect);
@@ -1606,6 +1860,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const endPointer = () => {
     const m = mode.current;
     mode.current = null;
+    activePointer.current = null;
     snapOthers.current = null;
     setSnapLines(null);
     if (m?.type === 'resize') remeasureText([m.id]);
@@ -1693,13 +1948,25 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
   const empty = loaded && sorted.length === 0 && pending.length === 0;
   const dark = isDark(project.bgColor);
 
-  const canvasApi: CanvasApi = { zoom: view.zoom, zoomBy, zoomTo, zoomToFit, textTool, setTextTool };
+  const canvasApi: CanvasApi = {
+    zoom: view.zoom,
+    zoomBy,
+    zoomTo,
+    zoomToFit,
+    textTool,
+    setTextTool,
+  };
 
   const menuEntries = (): MenuEntry[] => {
     if (!menu) return [];
     if (menu.kind === 'canvas')
       return [
-        { label: 'Paste', icon: <ClipboardPaste />, shortcut: `${MOD}V`, onSelect: () => pasteFromMenu(menu.world) },
+        {
+          label: 'Paste',
+          icon: <ClipboardPaste />,
+          shortcut: `${MOD}V`,
+          onSelect: () => pasteFromMenu(menu.world),
+        },
         {
           label: 'Upload images…',
           icon: <Upload />,
@@ -1708,46 +1975,125 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
             fileInput.current?.click();
           },
         },
-        { label: 'Add from URL…', icon: <Link2 />, onSelect: () => setUrlDialogAt(menu.world) },
-        { label: 'Add text', icon: <Type />, shortcut: 'T', onSelect: () => createText(menu.world) },
+        {
+          label: 'Add from URL…',
+          icon: <Link2 />,
+          onSelect: () => setUrlDialogAt(menu.world),
+        },
+        {
+          label: 'Add text',
+          icon: <Type />,
+          shortcut: 'T',
+          onSelect: () => createText(menu.world),
+        },
         'sep',
         {
           label: 'Select all',
           icon: <MousePointer2 />,
           shortcut: `${MOD}A`,
           disabled: !sorted.length,
-          onSelect: () => setSelection(new Set(Object.values(itemsRef.current).filter(selectable).map((i) => i.id))),
+          onSelect: () =>
+            setSelection(
+              new Set(
+                Object.values(itemsRef.current)
+                  .filter(selectable)
+                  .map((i) => i.id),
+              ),
+            ),
         },
-        { label: 'Zoom to fit', icon: <Maximize />, shortcut: '⇧1', onSelect: zoomToFit },
+        {
+          label: 'Zoom to fit',
+          icon: <Maximize />,
+          shortcut: '⇧1',
+          onSelect: zoomToFit,
+        },
       ];
     const one = selected.length === 1 ? selected[0] : null;
     return [
-      { label: 'Bring to front', icon: <ArrowUpToLine />, shortcut: ']', onSelect: () => restack('front') },
-      { label: 'Send to back', icon: <ArrowDownToLine />, shortcut: '[', onSelect: () => restack('back') },
+      {
+        label: 'Bring to front',
+        icon: <ArrowUpToLine />,
+        shortcut: ']',
+        onSelect: () => restack('front'),
+      },
+      {
+        label: 'Send to back',
+        icon: <ArrowDownToLine />,
+        shortcut: '[',
+        onSelect: () => restack('back'),
+      },
       'sep',
       ...(selected.some((i) => i.groupId)
-        ? ([{ label: 'Ungroup', icon: <UngroupIcon />, shortcut: '⇧⌘G', onSelect: ungroupSelection }] as MenuEntry[])
+        ? ([
+            {
+              label: 'Ungroup',
+              icon: <UngroupIcon />,
+              shortcut: '⇧⌘G',
+              onSelect: ungroupSelection,
+            },
+          ] as MenuEntry[])
         : []),
       ...(new Set(selected.map((i) => i.groupId || i.id)).size > 1
-        ? ([{ label: 'Group', icon: <GroupIcon />, shortcut: '⌘G', onSelect: groupSelection }] as MenuEntry[])
+        ? ([
+            {
+              label: 'Group',
+              icon: <GroupIcon />,
+              shortcut: '⌘G',
+              onSelect: groupSelection,
+            },
+          ] as MenuEntry[])
         : []),
       'sep',
-      { label: 'Rotate 90°', icon: <RotateCw />, shortcut: '⇧R', onSelect: () => rotateSelection(90) },
+      {
+        label: 'Rotate 90°',
+        icon: <RotateCw />,
+        shortcut: '⇧R',
+        onSelect: () => rotateSelection(90),
+      },
       ...(selected.some((i) => i.rotation)
-        ? ([{ label: 'Reset rotation', icon: <RotateCcw />, onSelect: () => rotateSelection('reset') }] as MenuEntry[])
+        ? ([
+            {
+              label: 'Reset rotation',
+              icon: <RotateCcw />,
+              onSelect: () => rotateSelection('reset'),
+            },
+          ] as MenuEntry[])
         : []),
       'sep',
       ...(one?.kind === 'text'
-        ? ([{ label: 'Edit text', icon: <Type />, shortcut: '↵', onSelect: () => startEdit(one.id) }] as MenuEntry[])
+        ? ([
+            {
+              label: 'Edit text',
+              icon: <Type />,
+              shortcut: '↵',
+              onSelect: () => startEdit(one.id),
+            },
+          ] as MenuEntry[])
         : []),
       ...(selected.some((i) => i.kind !== 'text')
-        ? ([{ label: 'Copy', icon: <Copy />, shortcut: `${MOD}C`, onSelect: copySelection }] as MenuEntry[])
+        ? ([
+            {
+              label: 'Copy',
+              icon: <Copy />,
+              shortcut: `${MOD}C`,
+              onSelect: copySelection,
+            },
+          ] as MenuEntry[])
         : []),
-      { label: 'Duplicate', icon: <CopyPlus />, shortcut: `${MOD}D`, onSelect: duplicateSelection },
+      {
+        label: 'Duplicate',
+        icon: <CopyPlus />,
+        shortcut: `${MOD}D`,
+        onSelect: duplicateSelection,
+      },
       ...(one && one.kind !== 'text'
         ? ([
             'sep',
-            { label: 'Open image', icon: <ImageIcon />, onSelect: () => window.open(one.src, '_blank', 'noopener') },
+            {
+              label: 'Open image',
+              icon: <ImageIcon />,
+              onSelect: () => window.open(one.src, '_blank', 'noopener'),
+            },
             ...(one.sourceUrl && /^https?:/.test(one.sourceUrl)
               ? [
                   {
@@ -1760,7 +2106,13 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
           ] as MenuEntry[])
         : []),
       'sep',
-      { label: 'Delete', icon: <Trash2 />, shortcut: '⌫', danger: true, onSelect: deleteSelection },
+      {
+        label: 'Delete',
+        icon: <Trash2 />,
+        shortcut: '⌫',
+        danger: true,
+        onSelect: deleteSelection,
+      },
     ];
   };
 
@@ -1775,8 +2127,9 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         style={{ ...backgroundStyle(project, bgOffset), cursor }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
-        onPointerUp={endPointer}
-        onPointerCancel={endPointer}
+        onPointerUp={(e) => (activePointer.current === null || e.pointerId === activePointer.current) && endPointer()}
+        onPointerCancel={(e) => (activePointer.current === null || e.pointerId === activePointer.current) && endPointer()}
+        onLostPointerCapture={(e) => mode.current && e.pointerId === activePointer.current && endPointer()}
         onPointerLeave={() => (pointer.current.inside = false)}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
@@ -1784,20 +2137,25 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
         onDragLeave={onDragLeave}
         onDrop={onDrop}
       >
+        {loadError && (
+          <div className="canvas-error" role="alert">
+            <strong>Couldn’t load this board.</strong>
+            <span>{loadError}</span>
+            <button className="btn secondary small" onClick={() => setLoadAttempt((n) => n + 1)}>
+              Try again
+            </button>
+          </div>
+        )}
         <div
           className={`world${interacting ? ' busy' : ''}`}
-          style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`, ['--zoom' as string]: view.zoom }}
+          style={{
+            transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
+            ['--zoom' as string]: view.zoom,
+          }}
         >
           {sorted.map((it) =>
             it.hidden ? null : it.kind === 'text' ? (
-              <TextView
-                key={it.id}
-                item={it}
-                editing={editingId === it.id}
-                dark={dark}
-                onMeasure={onMeasure}
-                onDone={finishEdit}
-              />
+              <TextView key={it.id} item={it} editing={editingId === it.id} dark={dark} onMeasure={onMeasure} onDone={finishEdit} />
             ) : (
               <ItemView key={it.id} item={it} />
             ),
@@ -1806,7 +2164,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
             <div
               key={p.id}
               className="placeholder"
-              style={{ transform: `translate(${p.x}px, ${p.y}px)`, width: p.w, height: p.h }}
+              style={{
+                transform: `translate(${p.x}px, ${p.y}px)`,
+                width: p.w,
+                height: p.h,
+              }}
             />
           ))}
           <div className="overlay">
@@ -1822,11 +2184,13 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
               >
                 {selected.length === 1 &&
                   editingId !== it.id &&
+                  !it.locked &&
                   (['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
                     <div key={`r${c}`} className={`rot ${c}`} data-rotate={c} data-for={it.id} />
                   ))}
                 {selected.length === 1 &&
                   editingId !== it.id &&
+                  !it.locked &&
                   it.w * view.zoom > 40 &&
                   it.h * view.zoom > 40 &&
                   (['n', 'e', 's', 'w'] as const).map((e) => (
@@ -1834,6 +2198,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
                   ))}
                 {selected.length === 1 &&
                   editingId !== it.id &&
+                  !it.locked &&
                   (['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
                     <div key={c} className={`handle ${c}`} data-handle={c} data-for={it.id} />
                   ))}
@@ -1845,7 +2210,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
                 return (
                   <div
                     className="sel-box group"
-                    style={{ transform: `translate(${b.x}px, ${b.y}px)`, width: b.w, height: b.h }}
+                    style={{
+                      transform: `translate(${b.x}px, ${b.y}px)`,
+                      width: b.w,
+                      height: b.h,
+                    }}
                   >
                     {(['n', 'e', 's', 'w'] as const).map((e) => (
                       <div key={`e${e}`} className={`edge ${e}`} data-handle={e} data-for="__group" />
@@ -1859,7 +2228,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
             {marquee && (
               <div
                 className="marquee"
-                style={{ transform: `translate(${marquee.x}px, ${marquee.y}px)`, width: marquee.w, height: marquee.h }}
+                style={{
+                  transform: `translate(${marquee.x}px, ${marquee.y}px)`,
+                  width: marquee.w,
+                  height: marquee.h,
+                }}
               />
             )}
           </div>
@@ -1898,7 +2271,11 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
           !editingId &&
           (() => {
             const one = selected.length === 1 ? selected[0] : null;
-            let x: number, y: number, deg = 0, w: number, h: number;
+            let x: number,
+              y: number,
+              deg = 0,
+              w: number,
+              h: number;
             if (one) {
               // Like Figma: pinned under the image's own bottom edge and turned with it.
               // Past ±90° use the opposite edge so the text never reads upside down.
@@ -1958,7 +2335,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
               ),
             )}
             {snapLines.gaps.map((g, i) => {
-              const a = g.a * (view.zoom) + (g.axis === 'x' ? view.x : view.y);
+              const a = g.a * view.zoom + (g.axis === 'x' ? view.x : view.y);
               const b = g.b * view.zoom + (g.axis === 'x' ? view.x : view.y);
               const at = g.at * view.zoom + (g.axis === 'x' ? view.y : view.x);
               const label = Math.round(g.b - g.a);
@@ -2012,7 +2389,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
           if (how === 'toggle') {
             const next = new Set(selRef.current);
             const allIn = ids.every((id) => next.has(id));
-            for (const id of ids) (allIn ? next.delete(id) : next.add(id));
+            for (const id of ids) allIn ? next.delete(id) : next.add(id);
             setSelection(next);
           } else setSelection(new Set(ids));
         }}
@@ -2036,12 +2413,7 @@ export function Canvas({ project, onViewSaved, toast, chrome, settings, reloadSi
       />
 
       {menu && <Menu x={menu.x} y={menu.y} entries={menuEntries()} onClose={() => setMenu(null)} />}
-      {urlDialogAt && (
-        <UrlDialog
-          onClose={() => setUrlDialogAt(null)}
-          onSubmit={(url) => ingest([{ kind: 'url', url }], urlDialogAt)}
-        />
-      )}
+      {urlDialogAt && <UrlDialog onClose={() => setUrlDialogAt(null)} onSubmit={(url) => ingest([{ kind: 'url', url }], urlDialogAt)} />}
       <input
         ref={fileInput}
         type="file"

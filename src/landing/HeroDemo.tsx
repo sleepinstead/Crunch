@@ -1,4 +1,8 @@
-import { Stage, Window, type Act, type Layout, type Point } from './kit';
+import { Stage } from './kit/stage';
+import { Window } from './kit/window';
+import type { Act } from './kit/act';
+import type { Layout } from './kit/looks';
+import type { Point } from './kit/measure';
 import { Poster } from './Posters';
 import './hero-demo.css';
 

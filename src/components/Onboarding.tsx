@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { useFocusTrap } from './ui';
 import { Poster } from '../landing/Posters';
 import './onboarding.css';
 
 /** localStorage key: set once the tour has been finished or dismissed. */
 export const ONBOARDED_KEY = 'crunch.onboarded';
 
-const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl';
+const MOD = /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl';
 
 type Step = { kicker: string; title: string; text: ReactNode; art: ReactNode; tone: string };
 
@@ -175,7 +176,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
     } catch {
       /* ignore */
     }
-    window.setTimeout(onClose, 200);
+    closeTimer.current = window.setTimeout(onClose, 200);
   };
   const go = (n: number) => {
     if (n < 0 || n >= STEPS.length) return;
@@ -183,16 +184,20 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
     setI(n);
   };
 
-  useEffect(() => {
-    card.current?.focus();
-  }, []);
+  useFocusTrap(card);
+  const closeTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(closeTimer.current), []);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation();
         close();
-      } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
+        return;
+      }
+      // Arrows page through the tour; Enter and Space stay with whichever button has focus.
+      const onButton = (e.target as HTMLElement | null)?.closest('button');
+      if (e.key === 'ArrowRight' || (e.key === 'Enter' && !onButton)) {
         e.preventDefault();
         if (last) close();
         else go(i + 1);
@@ -219,7 +224,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
           <X size={16} />
         </button>
 
-        <div className="ob-art">
+        <div className="ob-art" aria-hidden>
           {/* keyed so each scene restarts its loop when it comes in */}
           <div key={i} className="ob-scene" data-dir={dir}>
             {step.art}
@@ -232,7 +237,7 @@ export function Onboarding({ onClose }: { onClose: () => void }) {
               <button key={n} className="ob-seg" data-on={n <= i || undefined} tabIndex={-1} onClick={() => go(n)} />
             ))}
           </div>
-          <div key={i} className="ob-copy" data-dir={dir}>
+          <div key={i} className="ob-copy" data-dir={dir} aria-live="polite">
             <span className="ob-kicker">
               {step.kicker}
               <span className="ob-count">

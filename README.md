@@ -1,61 +1,85 @@
 # Crunch
 
-A local-first inspiration canvas. Paste, drop, and arrange images on an infinite canvas, one canvas per project.
+Crunch is a place to collect visual references. You paste or drop images onto an endless canvas, move them around
+until the board feels right, and keep each project on its own board. Everything stays on your computer: no account,
+no cloud, and it works offline.
 
-## Run
+Saving inspiration usually ends up as a folder of screenshots or a bookmarking site that holds your files for you.
+Crunch keeps the originals in a folder you control and gives you a proper canvas to arrange them on.
 
-Requires Node 22.18+ (uses the built-in `node:sqlite` and native TypeScript; no native modules to compile).
+<!-- Screenshot: a full board with a few images and a text note -->
+![A Crunch board](docs/screenshot-board.png)
+
+## What it does
+
+- **Paste anything.** Copy an image, an image link or a web page and press ⌘V. Crunch downloads the full file, so
+  GIFs stay animated and nothing breaks when the original site goes away.
+- **Arrange like a design tool.** Move, resize and rotate images. Things snap to each other's edges and to even
+  spacing as you drag.
+- **Layers and groups.** Group related images, name them, lock or hide them from the Layers panel.
+- **Text notes.** Add a few words next to your references.
+- **One board per project.** Boards live as tabs in the dock at the bottom. Each has its own background colour and
+  pattern.
+- **Recently deleted.** Deleted images and notes wait there until you restore them or clear them out.
+- **Export and import.** Save your whole library as a single `.crunch` file and bring it back on any machine.
+
+## Getting started
+
+You need Node.js 22.18 or newer.
 
 ```bash
-npm install
-npm run dev          # http://localhost:3210
+npm ci
+npm run dev
 ```
 
-Production:
+Then open http://localhost:3210. The first visit shows a short welcome page and a quick tour. After that, Crunch
+opens straight to your boards.
+
+To run it the way you would day to day:
 
 ```bash
-npm run build && npm start
+npm run build
+npm start
 ```
 
-`PORT`, `HOST` and `CRUNCH_DATA_DIR` can be set via env.
+<!-- Screenshot: the dock with board tabs and the Layers panel open -->
+![Boards, layers and the dock](docs/screenshot-layers.png)
 
-## Storage
+## Everyday shortcuts
 
-Everything lives in `data/` (or `CRUNCH_DATA_DIR`):
-
-- `data/crunch.db`: SQLite (projects, image metadata, canvas placements)
-- `data/images/`: the actual image files, named by content hash
-
-Every image is downloaded and written to disk before it appears on the canvas. Images pasted from a web page,
-added by URL, or found via a page's `og:image` are fetched by the server, never hot-linked. The same image added
-twice is stored once. Deleting an image from a canvas or deleting a project never removes files from `data/images/`.
-
-Back up `data/` to back up everything.
-
-## Adding images
-
-- **⌘V**: images, copied web images (the original file is downloaded, so GIFs stay animated), image URLs, page URLs
-- **Drag & drop**: files from Finder or images from another browser tab
-- Right-click the canvas: Paste, Upload, Add from URL
-
-## Controls
-
-| | |
+| Shortcut | What it does |
 |---|---|
-| Scroll / Space-drag / middle-drag | Pan |
-| Drag empty canvas | Select area |
-| Pinch / ⌘-scroll | Zoom |
-| ⇧1 / ⇧0 | Zoom to fit / 100% |
-| Double-click image | Focus it |
-| Drag corners | Resize (aspect locked) |
-| ⌥-drag | Duplicate while moving |
-| Drag just outside a corner | Rotate (⇧ snaps to 15°) |
-| ⇧R | Rotate 90° |
-| ⌘D, ⌘C, ⌫ | Duplicate, copy, delete |
-| `[` `]` | Send to back / bring to front |
+| ⌘V | Paste images or links |
+| Space + drag, or scroll | Move around the canvas |
+| ⌘ + scroll, or pinch | Zoom |
+| ⌘G / ⇧⌘G | Group / ungroup |
+| ⌘D | Duplicate |
 | ⌘Z / ⇧⌘Z | Undo / redo |
-| ⌥1–9 | Switch project |
-| ? | All shortcuts |
+| ⌥1–9 | Switch boards |
+| ? | Show every shortcut |
 
-Projects are tabs in the floating dock at the bottom: double-click to rename, drag to reorder, right-click to delete.
-The swatch button sets the background pattern (dots, grid, plain) and its color.
+Double-click a board tab to rename it, drag to reorder, right-click to delete.
+
+## Where your files live
+
+Everything is saved in the `data` folder inside the project:
+
+- `crunch.db` holds your boards, layers and settings.
+- `images/` holds the image files themselves. The same image added twice is only stored once.
+- `backups/` keeps a daily copy of the database for the last two weeks.
+
+To move your library, use **Settings › Library › Export**, then **Import** on the other machine. Importing adds
+boards next to the ones you already have and never overwrites anything.
+
+<!-- Screenshot: Settings panel showing Export and Import -->
+![Export and import in Settings](docs/screenshot-settings.png)
+
+## A few more things
+
+- Crunch only listens on your own machine by default. If you change `HOST` to share it on a network, you also have
+  to set `CRUNCH_TOKEN`.
+- `PORT` and `CRUNCH_DATA_DIR` let you change the port and keep the library somewhere else.
+
+## License
+
+MIT

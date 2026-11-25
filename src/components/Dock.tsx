@@ -213,6 +213,9 @@ export function Dock(p: Props) {
         <button
           ref={zoomBtn}
           className={`zoom-btn${zoomOpen ? ' on' : ''}`}
+          aria-label={`Zoom, ${zoomPct}%`}
+          aria-haspopup="menu"
+          aria-expanded={zoomOpen}
           onClick={() => setZoomOpen((o) => !o)}
           data-tip="Zoom"
         >

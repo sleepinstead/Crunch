@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Collapse, Stage, useReducedMotion, type Act } from './kit';
+import { Stage } from './kit/stage';
+import { Collapse } from './kit/motion/Collapse';
+import { useReducedMotion } from './kit/reduced-motion';
+import type { Act } from './kit/act';
 import { Poster, type PosterKind } from './Posters';
 import './bento.css';
 
@@ -108,7 +111,7 @@ function Layers() {
       area="hero"
       title={<b>Layers, groups and locks.</b>}
       picture={
-        <div ref={picture} className="cb-picture cb-picture--hero">
+        <div ref={picture} className="cb-picture cb-picture--hero" aria-hidden>
           <Stage<LayersS>
             width={width}
             height={wide ? 300 : 330}
@@ -254,7 +257,7 @@ function Color() {
       area="color"
       title={<b>Colours, picked properly.</b>}
       picture={
-        <div className="cb-picture cb-picture--center">
+        <div className="cb-picture cb-picture--center" aria-hidden>
           <Stage<ColorS>
             width={360}
             height={210}
@@ -339,7 +342,7 @@ function Snap() {
       area="snap"
       title={<b>Snaps into place.</b>}
       picture={
-        <div ref={picture} className="cb-picture cb-picture--aligned">
+        <div ref={picture} className="cb-picture cb-picture--aligned" aria-hidden>
           <Stage<SnapS> width={width} height={190} initial={{ on: false }} poster={{ on: true }} play="loop" script={snapScript} className="cb-stage">
             {(s) => (
               <div className="cb-snap" data-on={s.on || undefined} style={{ ['--box' as string]: `${box}px` }}>
